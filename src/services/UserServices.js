@@ -1,25 +1,27 @@
 const User = require("../models/UserModel");
 const bcrypt = require("bcrypt");
+const mongoose = require("mongoose");
 const { genneralAccessToken, genneralRefreshToken } = require("./JwtServices");
 
 // Tạo API đăng ký
-const createUser = (newUser) => {
+const createUser = (newUser, allowAdmin = false) => {
     return new Promise(async (resolve, reject) => {
-        const { name, email, password, phone, isAdmin } = newUser; // Thêm isAdmin từ dữ liệu đầu vào
+        const { name, email, password, phone, isAdmin } = newUser;
         try {
-            if (!name || !email || !password) {
+            const normalizedEmail = email?.trim().toLowerCase();
+            if (!name || !normalizedEmail || !password) {
                 return resolve({
                     status: 'ERR',
                     message: 'Thiếu thông tin bắt buộc: name, email, password',
                 });
             }
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
                 return resolve({
                     status: 'ERR',
                     message: 'Email không hợp lệ',
                 });
             }
-            const checkUser = await User.findOne({ email });
+            const checkUser = await User.findOne({ email: normalizedEmail });
             if (checkUser !== null) {
                 return resolve({
                     status: 'ERR',
@@ -28,16 +30,18 @@ const createUser = (newUser) => {
             }
             const hash = bcrypt.hashSync(password, 10);
             const createdUser = await User.create({
-                name,
-                email,
+                name: name.trim(),
+                email: normalizedEmail,
                 password: hash,
                 phone,
-                isAdmin: isAdmin || false, // Nếu không truyền isAdmin, mặc định là false
+                isAdmin: allowAdmin ? Boolean(isAdmin) : false,
             });
+            const userData = createdUser.toObject();
+            delete userData.password;
             return resolve({
                 status: 'OK',
                 message: 'Thành công',
-                data: createdUser,
+                data: userData,
             });
         } catch (e) {
             reject(e);
@@ -50,13 +54,14 @@ const loginUser = (userLogin) => {
     return new Promise(async (resolve, reject) => {
         const { email, password } = userLogin;
         try {
-            if (!email || !password) {
+            const normalizedEmail = email?.trim().toLowerCase();
+            if (!normalizedEmail || !password) {
                 return resolve({
                     status: 'ERR',
                     message: 'Email và password là bắt buộc',
                 });
             }
-            const checkUser = await User.findOne({ email });
+            const checkUser = await User.findOne({ email: normalizedEmail }).select('+password');
             if (!checkUser) {
                 return resolve({
                     status: 'ERR',
@@ -73,7 +78,7 @@ const loginUser = (userLogin) => {
             const access_token = await genneralAccessToken({
                 id: checkUser._id,
                 email: checkUser.email,
-                isAdmin: checkUser.isAdmin, // Thêm isAdmin vào token
+                isAdmin: checkUser.isAdmin,
             });
             const refresh_token = await genneralRefreshToken({
                 id: checkUser._id,
@@ -85,7 +90,7 @@ const loginUser = (userLogin) => {
                 message: 'Thành công',
                 access_token,
                 refresh_token,
-                isAdmin: checkUser.isAdmin, // Trả về isAdmin để frontend xử lý điều hướng
+                isAdmin: checkUser.isAdmin,
             });
         } catch (e) {
             reject(e);
@@ -94,9 +99,15 @@ const loginUser = (userLogin) => {
 };
 
 // Tạo API cập nhật
-const updateUser = (id, data) => {
+const updateUser = (id, data, isAdmin = false) => {
     return new Promise(async (resolve, reject) => {
         try {
+            if (!mongoose.isValidObjectId(id)) {
+                return resolve({
+                    status: 'ERR',
+                    message: 'User ID không hợp lệ',
+                });
+            }
             const checkUser = await User.findOne({ _id: id });
             if (!checkUser) {
                 return resolve({
@@ -104,8 +115,19 @@ const updateUser = (id, data) => {
                     message: 'Người dùng không tồn tại',
                 });
             }
-            if (data.email) {
-                const emailCheck = await User.findOne({ email: data.email, _id: { $ne: id } });
+            const updateData = { ...data };
+            delete updateData.confirmPassword;
+            if (!isAdmin) delete updateData.isAdmin;
+
+            if (updateData.email) {
+                updateData.email = updateData.email.trim().toLowerCase();
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updateData.email)) {
+                    return resolve({
+                        status: 'ERR',
+                        message: 'Email không hợp lệ',
+                    });
+                }
+                const emailCheck = await User.findOne({ email: updateData.email, _id: { $ne: id } });
                 if (emailCheck) {
                     return resolve({
                         status: 'ERR',
@@ -113,10 +135,10 @@ const updateUser = (id, data) => {
                     });
                 }
             }
-            if (data.password) {
-                data.password = bcrypt.hashSync(data.password, 10);
+            if (updateData.password) {
+                updateData.password = bcrypt.hashSync(updateData.password, 10);
             }
-            const updatedUser = await User.findByIdAndUpdate(id, data, { new: true });
+            const updatedUser = await User.findByIdAndUpdate(id, updateData, { new: true });
             return resolve({
                 status: 'OK',
                 message: 'Thành công',
@@ -129,9 +151,21 @@ const updateUser = (id, data) => {
 };
 
 // Xóa thông tin người dùng
-const deleteUser = (id) => {
+const deleteUser = (id, currentUserId) => {
     return new Promise(async (resolve, reject) => {
         try {
+            if (!mongoose.isValidObjectId(id)) {
+                return resolve({
+                    status: 'ERR',
+                    message: 'User ID không hợp lệ',
+                });
+            }
+            if (currentUserId && id === currentUserId) {
+                return resolve({
+                    status: 'ERR',
+                    message: 'Không thể xóa tài khoản đang đăng nhập',
+                });
+            }
             const checkUser = await User.findOne({ _id: id });
             if (!checkUser) {
                 return resolve({
@@ -154,7 +188,7 @@ const deleteUser = (id) => {
 const getAllUser = () => {
     return new Promise(async (resolve, reject) => {
         try {
-            const allUser = await User.find();
+            const allUser = await User.find().sort({ createdAt: -1 });
             return resolve({
                 status: 'OK',
                 message: 'Thành công',
@@ -170,6 +204,12 @@ const getAllUser = () => {
 const getDetailsUser = (id) => {
     return new Promise(async (resolve, reject) => {
         try {
+            if (!mongoose.isValidObjectId(id)) {
+                return resolve({
+                    status: 'ERR',
+                    message: 'User ID không hợp lệ',
+                });
+            }
             const user = await User.findOne({ _id: id });
             if (!user) {
                 return resolve({

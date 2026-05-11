@@ -33,6 +33,31 @@ const createUser = async (req, res) => {
     }
 };
 
+const createUserByAdmin = async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+        const reg = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!name || !email || !password) {
+            return res.status(400).json({
+                status: 'ERR',
+                message: 'Đầu vào bắt buộc',
+            });
+        }
+        if (!reg.test(email)) {
+            return res.status(400).json({
+                status: 'ERR',
+                message: 'Email không hợp lệ',
+            });
+        }
+        const response = await UserServices.createUser(req.body, true);
+        return res.status(response.status === 'OK' ? 201 : 400).json(response);
+    } catch (e) {
+        return res.status(500).json({
+            message: e.message,
+        });
+    }
+};
+
 const loginUser = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -56,7 +81,7 @@ const loginUser = async (req, res) => {
             res.cookie('refresh_token', refresh_token, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
                 path: '/',
             });
             return res.status(200).json(newResponse);
@@ -79,7 +104,7 @@ const updateUser = async (req, res) => {
                 message: 'User ID bắt buộc',
             });
         }
-        const response = await UserServices.updateUser(userId, data);
+        const response = await UserServices.updateUser(userId, data, req.isAdmin);
         return res.status(response.status === 'OK' ? 200 : 400).json(response);
     } catch (e) {
         return res.status(500).json({
@@ -97,7 +122,7 @@ const deleteUser = async (req, res) => {
                 message: 'User ID bắt buộc',
             });
         }
-        const response = await UserServices.deleteUser(userId);
+        const response = await UserServices.deleteUser(userId, req.userId);
         return res.status(response.status === 'OK' ? 200 : 400).json(response);
     } catch (e) {
         return res.status(500).json({
@@ -156,10 +181,13 @@ const refreshToken = async (req, res) => {
 // Đăng xuất người dùng
 const logoutUser = (req, res) => {
     try {
-        // Xóa refresh token trên client (điều này tùy thuộc vào nơi bạn lưu trữ refresh token, ví dụ trong cookie)
-        res.clearCookie('refresh_token');  // nếu bạn lưu trữ refresh token trong cookie
+        res.clearCookie('refresh_token', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            path: '/',
+        });
 
-        // Trả về phản hồi thành công
         return res.status(200).json({
             status: 'OK',
             message: 'Đăng xuất thành công',
@@ -175,6 +203,7 @@ const logoutUser = (req, res) => {
 
 module.exports = {
     createUser,
+    createUserByAdmin,
     loginUser,
     updateUser,
     deleteUser,

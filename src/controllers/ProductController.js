@@ -2,8 +2,8 @@ const ProductService = require('../services/ProductServices');
 
 const createProduct = async (req, res) => {
     try {
-        const { name, image, type, price, countInStock } = req.body;
-        if (!name || !type || !price || !countInStock) {
+        const { name, type, price, countInStock } = req.body;
+        if (!name || !type || price === undefined || countInStock === undefined) {
             return res.status(400).json({
                 status: 'ERR',
                 message: 'Đầu vào bắt buộc: name, type, price, countInStock',
@@ -79,8 +79,7 @@ const deleteProduct = async (req, res) => {
 
 const getAllProduct = async (req, res) => {
     try {
-        const { limit, page, sort, filter } = req.query;
-        const response = await ProductService.getAllProduct(limit, page, sort, filter);
+        const response = await ProductService.getAllProduct(req.query);
         return res.status(response.status === 'OK' ? 200 : 400).json(response);
     } catch (e) {
         return res.status(500).json({

@@ -4,6 +4,7 @@ const UserController = require('../controllers/UserController');
 const { authMiddleware, authUserMiddleware } = require('../middleware/authMiddleware');
 
 router.post('/sign-up', UserController.createUser);
+router.post('/create', authMiddleware, UserController.createUserByAdmin);
 router.post('/sign-in', UserController.loginUser);
 router.post('/log-out', UserController.logoutUser);
 router.put('/update/:id', authUserMiddleware, UserController.updateUser);
