@@ -24,9 +24,20 @@ const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:3000')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+const isAllowedVercelPreview = (origin) => {
+    if (!origin) return false;
+    try {
+        const { hostname, protocol } = new URL(origin);
+        if (protocol !== 'https:') return false;
+        return hostname === 'petshop-fe.vercel.app' || hostname.startsWith('petshop-fe-') && hostname.endsWith('.vercel.app');
+    } catch (error) {
+        return false;
+    }
+};
+
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin || allowedOrigins.includes(origin) || isAllowedVercelPreview(origin)) {
             return callback(null, true);
         }
         return callback(new Error('Origin không được phép bởi CORS'));
