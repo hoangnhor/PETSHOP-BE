@@ -66,15 +66,19 @@ app.get('/health', (req, res) => {
 app.use((req, res) => {
     return res.status(404).json({
         status: 'ERR',
+        code: 'NOT_FOUND',
         message: 'Không tìm thấy endpoint',
+        path: req.originalUrl,
     });
 });
 
 app.use((err, req, res, next) => {
     console.error('Server error:', err);
-    return res.status(500).json({
+    const statusCode = Number(err?.statusCode) || 500;
+    return res.status(statusCode).json({
         status: 'ERR',
-        message: 'Lỗi hệ thống',
+        code: err?.code || 'INTERNAL_ERROR',
+        message: err?.message || 'Lỗi hệ thống',
     });
 });
 
