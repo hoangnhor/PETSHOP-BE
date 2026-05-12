@@ -10,9 +10,10 @@
 
 > “petshop BE” là lõi nghiệp vụ e-commerce: bảo vệ tài nguyên bằng phân quyền nhiều lớp, chuẩn hóa API contract, và đảm bảo các domain user/product/order vận hành nhất quán ở production.
 
-- 🌐 Live API: `<YOUR_BE_LIVE_URL>`
-- 🔗 Backend Repo: `<YOUR_BE_REPO_URL>`
-- 🔗 Frontend Repo: `<YOUR_FE_REPO_URL>`
+- 🌐 Live API: `https://petshopbe.onrender.com`
+- 🌐 Live Frontend: `https://htpetshop.vercel.app/`
+- 🔗 Backend Repo: `https://github.com/hoangnhor/petshopBE`
+- 🔗 Frontend Repo: `https://github.com/hoangnhor/petshopFE`
 
 ---
 
