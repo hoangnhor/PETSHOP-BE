@@ -16,18 +16,7 @@ const getShippingAddress = (shippingAddress, user) => {
     };
 };
 
-const restoreStock = async (bill) => {
-    for (const item of bill.items) {
-        const product = await Product.findById(item.idsp);
-        if (product) {
-            product.countInStock += item.quantity;
-            product.selled = Math.max((product.selled || 0) - item.quantity, 0);
-            await product.save();
-        }
-    }
-};
-
-const restoreStockItems = async (items) => {
+const restoreStockItems = async (items, session = null) => {
     for (const item of items) {
         await Product.updateOne(
             { _id: item.idsp },
@@ -37,12 +26,14 @@ const restoreStockItems = async (items) => {
                     selled: -item.quantity,
                 },
             }
+            ,
+            session ? { session } : {}
         );
-        const product = await Product.findById(item.idsp);
-        if (product && product.selled < 0) {
-            product.selled = 0;
-            await product.save();
-        }
+        await Product.updateOne(
+            { _id: item.idsp, selled: { $lt: 0 } },
+            { $set: { selled: 0 } },
+            session ? { session } : {}
+        );
     }
 };
 
@@ -137,36 +128,42 @@ const createBill = async (newBill, userId) => {
         });
     }
 
-    const updatedItems = [];
+    const session = await mongoose.startSession();
     try {
-        for (const item of orderItems) {
-            const updateResult = await Product.updateOne(
-                { _id: item.idsp, countInStock: { $gte: item.quantity } },
-                {
-                    $inc: {
-                        countInStock: -item.quantity,
-                        selled: item.quantity,
+        let createdBill;
+        await session.withTransaction(async () => {
+            for (const item of orderItems) {
+                const updateResult = await Product.updateOne(
+                    { _id: item.idsp, countInStock: { $gte: item.quantity } },
+                    {
+                        $inc: {
+                            countInStock: -item.quantity,
+                            selled: item.quantity,
+                        },
                     },
-                }
-            );
+                    { session }
+                );
 
-            if (updateResult.modifiedCount !== 1) {
-                throw new Error(`Sản phẩm ${item.name} không đủ hàng`);
+                if (updateResult.modifiedCount !== 1) {
+                    throw new Error(`Sản phẩm ${item.name} không đủ hàng`);
+                }
             }
 
-            updatedItems.push(item);
-        }
-
-        const createdBill = await Bill.create({
-            iduser: userId,
-            items: orderItems,
-            shippingAddress: normalizedShippingAddress,
-            paymentMethod,
-            paymentStatus: paymentMethod === 'COD' ? 'unpaid' : 'paid',
-            orderStatus: 'pending',
-            tongtien,
-            note,
-            paidAt: paymentMethod === 'COD' ? null : new Date(),
+            const createdBills = await Bill.create(
+                [{
+                    iduser: userId,
+                    items: orderItems,
+                    shippingAddress: normalizedShippingAddress,
+                    paymentMethod,
+                    paymentStatus: paymentMethod === 'COD' ? 'unpaid' : 'paid',
+                    orderStatus: 'pending',
+                    tongtien,
+                    note,
+                    paidAt: paymentMethod === 'COD' ? null : new Date(),
+                }],
+                { session }
+            );
+            createdBill = createdBills[0];
         });
 
         return {
@@ -175,11 +172,12 @@ const createBill = async (newBill, userId) => {
             data: createdBill,
         };
     } catch (error) {
-        await restoreStockItems(updatedItems);
         return {
             status: 'ERR',
             message: error.message || 'Tạo đơn hàng thất bại',
         };
+    } finally {
+        await session.endSession();
     }
 };
 
@@ -189,15 +187,25 @@ const getAllBill = async (userId, isAdmin, query = {}) => {
     if (query.orderStatus) filter.orderStatus = query.orderStatus;
     if (query.paymentStatus) filter.paymentStatus = query.paymentStatus;
 
+    const limit = Math.min(Math.max(parseInt(query.limit) || 50, 1), 200);
+    const page = Math.max(parseInt(query.page) || 0, 0);
+
+    const total = await Bill.countDocuments(filter);
     const allBills = await Bill.find(filter)
         .populate('iduser', 'name email phone address')
         .populate('items.idsp')
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })
+        .skip(page * limit)
+        .limit(limit)
+        .lean();
 
     return {
         status: 'OK',
         message: 'Thành công',
         data: allBills,
+        total,
+        pageCurrent: page + 1,
+        totalPage: Math.ceil(total / limit),
     };
 };
 
@@ -335,21 +343,46 @@ const cancelBill = async (billId, userId, isAdmin = false, cancelReason = '') =>
         };
     }
 
-    await restoreStock(bill);
-    bill.orderStatus = 'cancelled';
-    bill.cancelledAt = new Date();
-    bill.cancelReason = cancelReason || 'Khách hàng hủy đơn';
-    if (bill.paymentStatus === 'paid') {
-        bill.paymentStatus = 'refunded';
+    const session = await mongoose.startSession();
+    try {
+        let cancelledBill;
+        await session.withTransaction(async () => {
+            const updatePayload = {
+                orderStatus: 'cancelled',
+                cancelledAt: new Date(),
+                cancelReason: cancelReason || 'Khách hàng hủy đơn',
+            };
+
+            if (bill.paymentStatus === 'paid') {
+                updatePayload.paymentStatus = 'refunded';
+            }
+
+            cancelledBill = await Bill.findOneAndUpdate(
+                { _id: billId, orderStatus: { $nin: ['delivered', 'cancelled'] } },
+                { $set: updatePayload },
+                { new: true, session }
+            );
+
+            if (!cancelledBill) {
+                throw new Error('Không thể hủy đơn hàng đã giao hoặc đã hủy');
+            }
+
+            await restoreStockItems(cancelledBill.items, session);
+        });
+
+        return {
+            status: 'OK',
+            message: 'Hủy đơn hàng thành công',
+            data: cancelledBill,
+        };
+    } catch (error) {
+        return {
+            status: 'ERR',
+            message: error.message || 'Hủy đơn hàng thất bại',
+        };
+    } finally {
+        await session.endSession();
     }
-
-    await bill.save();
-
-    return {
-        status: 'OK',
-        message: 'Hủy đơn hàng thành công',
-        data: bill,
-    };
 };
 
 const deleteBill = async (billId) => {
@@ -369,11 +402,43 @@ const deleteBill = async (billId) => {
         };
     }
 
-    if (!['cancelled', 'delivered'].includes(bill.orderStatus)) {
-        await restoreStock(bill);
-    }
+    const session = await mongoose.startSession();
+    try {
+        await session.withTransaction(async () => {
+            const currentBill = await Bill.findById(billId).session(session);
+            if (!currentBill) {
+                throw new Error('Hóa đơn không tồn tại');
+            }
 
-    await Bill.findByIdAndDelete(billId);
+            const shouldRestore = !['cancelled', 'delivered'].includes(currentBill.orderStatus);
+            if (shouldRestore) {
+                const claimedBill = await Bill.findOneAndUpdate(
+                    { _id: billId, orderStatus: { $nin: ['cancelled', 'delivered'] } },
+                    { $set: { orderStatus: 'cancelled' } },
+                    { new: true, session }
+                );
+
+                if (claimedBill) {
+                    await restoreStockItems(claimedBill.items, session);
+                }
+            }
+
+            await Bill.deleteOne({ _id: billId }, { session });
+        });
+    } catch (error) {
+        if (error.message === 'Hóa đơn không tồn tại') {
+            return {
+                status: 'ERR',
+                message: error.message,
+            };
+        }
+        return {
+            status: 'ERR',
+            message: 'Xóa thất bại',
+        };
+    } finally {
+        await session.endSession();
+    }
 
     return {
         status: 'OK',
@@ -389,3 +454,4 @@ module.exports = {
     cancelBill,
     deleteBill,
 };
+

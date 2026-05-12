@@ -7,7 +7,8 @@ const createType = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -19,7 +20,8 @@ const getAllType = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -31,7 +33,8 @@ const updateType = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -43,7 +46,8 @@ const deleteType = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -54,3 +58,5 @@ module.exports = {
     updateType,
     deleteType,
 };
+
+

@@ -14,7 +14,8 @@ const createProduct = async (req, res) => {
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
-            message: e.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -34,7 +35,8 @@ const updateProduct = async (req, res) => {
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
-            message: e.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -53,7 +55,8 @@ const getDetailsProduct = async (req, res) => {
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
-            message: e.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -72,7 +75,8 @@ const deleteProduct = async (req, res) => {
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
-            message: e.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -84,7 +88,8 @@ const getAllProduct = async (req, res) => {
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
-            message: e.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -103,7 +108,8 @@ const searchProduct = async (req, res) => {
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
-            message: e.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -116,3 +122,5 @@ module.exports = {
     getAllProduct,
     searchProduct,
 };
+
+

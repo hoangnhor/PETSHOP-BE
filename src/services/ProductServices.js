@@ -175,6 +175,33 @@ const normalizePairQuery = (value) => {
     return [];
 };
 
+const hydrateTypesForProducts = async (products) => {
+    const typeIds = [
+        ...new Set(
+            products
+                .map((product) => product?.type)
+                .filter((typeId) => mongoose.isValidObjectId(typeId))
+                .map((typeId) => typeId.toString())
+        ),
+    ];
+
+    if (!typeIds.length) return products;
+
+    const types = await Type.find({ _id: { $in: typeIds } }).lean();
+    const typeMap = new Map(types.map((type) => [type._id.toString(), type]));
+
+    return products.map((product) => {
+        const typeId = product?.type?.toString?.() || product?.type;
+        if (typeId && typeMap.has(typeId)) {
+            return {
+                ...product,
+                type: typeMap.get(typeId),
+            };
+        }
+        return product;
+    });
+};
+
 const getAllProduct = (queryParams = {}) => {
     return new Promise(async (resolve, reject) => {
         try {
@@ -222,7 +249,7 @@ const getAllProduct = (queryParams = {}) => {
             }
 
             const totalProduct = await Product.countDocuments(conditions);
-            let query = Product.find(conditions).populate('type');
+            let query = Product.find(conditions).lean();
 
             const sortPair = normalizePairQuery(sort);
             if (sortPair.length >= 2) {
@@ -233,9 +260,10 @@ const getAllProduct = (queryParams = {}) => {
                 query = query.sort({ createdAt: -1 });
             }
 
-            const allProduct = await query
+            const allProductRaw = await query
                 .limit(parsedLimit)
                 .skip(parsedPage * parsedLimit);
+            const allProduct = await hydrateTypesForProducts(allProductRaw);
 
             return resolve({
                 status: 'OK',
@@ -260,17 +288,18 @@ const getDetailsProduct = (id) => {
                     message: 'Product ID không hợp lệ',
                 });
             }
-            const product = await Product.findOne({ _id: id }).populate('type');
+            const product = await Product.findOne({ _id: id }).lean();
             if (!product) {
                 return resolve({
                     status: 'ERR',
                     message: 'Sản phẩm không tồn tại',
                 });
             }
+            const [hydratedProduct] = await hydrateTypesForProducts([product]);
             return resolve({
                 status: 'OK',
                 message: 'Thành công',
-                data: product,
+                data: hydratedProduct,
             });
         } catch (e) {
             reject(e);
@@ -280,9 +309,10 @@ const getDetailsProduct = (id) => {
 const searchProduct = (keyword) => {
     return new Promise(async (resolve, reject) => {
         try {
-            const products = await Product.find({
+            const productsRaw = await Product.find({
                 name: { $regex: keyword, $options: 'i' },
-            }).populate('type');
+            }).sort({ createdAt: -1 }).limit(50).lean();
+            const products = await hydrateTypesForProducts(productsRaw);
 
             return resolve({
                 status: 'OK',
@@ -306,3 +336,5 @@ module.exports = {
     getAllProduct,
     searchProduct,
 };
+
+

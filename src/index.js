@@ -4,6 +4,7 @@ const { default: mongoose } = require("mongoose");
 const routes = require("./routes");
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const helmet = require('helmet');
 const { basicRateLimit, sanitizePayload } = require('./middleware/securityMiddleware');
 
 // Load biến môi trường từ file .env
@@ -11,6 +12,7 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3030;
+app.set('trust proxy', 1);
 const requiredEnv = ['MONGODB_URL', 'ACCESS_TOKEN', 'REFRESH_TOKEN'];
 const missingEnv = requiredEnv.filter((key) => !process.env[key]);
 
@@ -46,9 +48,10 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'token'],
 }));
+app.use(helmet());
 app.use(basicRateLimit);
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ limit: '2mb', extended: true }));
 app.use(cookieParser());
 app.use(sanitizePayload);
 
@@ -78,7 +81,7 @@ app.use((err, req, res, next) => {
     return res.status(statusCode).json({
         status: 'ERR',
         code: err?.code || 'INTERNAL_ERROR',
-        message: err?.message || 'Lỗi hệ thống',
+        message: statusCode >= 500 ? 'Lỗi hệ thống' : (err?.message || 'Yêu cầu không hợp lệ'),
     });
 });
 
@@ -91,3 +94,7 @@ mongoose.connect(process.env.MONGODB_URL)
 app.listen(port, () => {
     console.log('Server is running on port:', port);
 });
+
+
+
+

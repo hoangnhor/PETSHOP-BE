@@ -28,7 +28,9 @@ const createUser = async (req, res) => {
         return res.status(response.status === 'OK' ? 201 : 400).json(response);
     } catch (e) {
         return res.status(500).json({
-            message: e.message,
+            status: 'ERR',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -53,7 +55,9 @@ const createUserByAdmin = async (req, res) => {
         return res.status(response.status === 'OK' ? 201 : 400).json(response);
     } catch (e) {
         return res.status(500).json({
-            message: e.message,
+            status: 'ERR',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -89,7 +93,9 @@ const loginUser = async (req, res) => {
         return res.status(400).json(response);
     } catch (e) {
         return res.status(500).json({
-            message: e.message,
+            status: 'ERR',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -108,7 +114,9 @@ const updateUser = async (req, res) => {
         return res.status(response.status === 'OK' ? 200 : 400).json(response);
     } catch (e) {
         return res.status(500).json({
-            message: e.message,
+            status: 'ERR',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -126,18 +134,22 @@ const deleteUser = async (req, res) => {
         return res.status(response.status === 'OK' ? 200 : 400).json(response);
     } catch (e) {
         return res.status(500).json({
-            message: e.message,
+            status: 'ERR',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
 
 const getAllUser = async (req, res) => {
     try {
-        const response = await UserServices.getAllUser();
+        const response = await UserServices.getAllUser(req.query);
         return res.status(response.status === 'OK' ? 200 : 400).json(response);
     } catch (e) {
         return res.status(500).json({
-            message: e.message,
+            status: 'ERR',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -155,7 +167,9 @@ const getDetailsUser = async (req, res) => {
         return res.status(response.status === 'OK' ? 200 : 400).json(response);
     } catch (e) {
         return res.status(500).json({
-            message: e.message,
+            status: 'ERR',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -173,7 +187,9 @@ const refreshToken = async (req, res) => {
         return res.status(response.status === 'OK' ? 200 : 401).json(response);
     } catch (e) {
         return res.status(500).json({
-            message: e.message,
+            status: 'ERR',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -195,7 +211,8 @@ const logoutUser = (req, res) => {
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
-            message: 'Đã xảy ra lỗi trong quá trình đăng xuất',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -212,3 +229,6 @@ module.exports = {
     refreshToken,
     logoutUser,
 };
+
+
+

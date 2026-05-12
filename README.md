@@ -83,11 +83,11 @@ npm run dev
 
 `.env`
 ```env
-PORT=
-CLIENT_URL=
-MONGODB_URL=
-ACCESS_TOKEN=
-REFRESH_TOKEN=
+PORT=3030
+CLIENT_URL=http://localhost:3000,https://htpetshop.vercel.app
+MONGODB_URL=mongodb+srv://<username>:<password>@<cluster>/<database>?retryWrites=true&w=majority
+ACCESS_TOKEN=<your_access_token_secret>
+REFRESH_TOKEN=<your_refresh_token_secret>
 ```
 
 Production run:

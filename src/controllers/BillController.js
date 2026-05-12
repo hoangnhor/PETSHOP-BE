@@ -7,7 +7,8 @@ const createBill = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -19,7 +20,8 @@ const getAllBill = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -38,7 +40,8 @@ const getDetailsBill = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -57,7 +60,8 @@ const updateBillStatus = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -81,7 +85,8 @@ const cancelBill = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -100,7 +105,8 @@ const deleteBill = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
-            message: error.message,
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
         });
     }
 };
@@ -113,3 +119,5 @@ module.exports = {
     cancelBill,
     deleteBill,
 };
+
+

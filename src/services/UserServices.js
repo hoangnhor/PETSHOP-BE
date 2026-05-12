@@ -185,14 +185,25 @@ const deleteUser = (id, currentUserId) => {
 };
 
 // Lấy tất cả người dùng
-const getAllUser = () => {
+const getAllUser = (query = {}) => {
     return new Promise(async (resolve, reject) => {
         try {
-            const allUser = await User.find().sort({ createdAt: -1 });
+            const limit = Math.min(Math.max(parseInt(query.limit) || 50, 1), 200);
+            const page = Math.max(parseInt(query.page) || 0, 0);
+            const total = await User.countDocuments();
+            const allUser = await User.find()
+                .sort({ createdAt: -1 })
+                .skip(page * limit)
+                .limit(limit)
+                .lean();
+
             return resolve({
                 status: 'OK',
                 message: 'Thành công',
                 data: allUser,
+                total,
+                pageCurrent: page + 1,
+                totalPage: Math.ceil(total / limit),
             });
         } catch (e) {
             reject(e);
@@ -236,3 +247,6 @@ module.exports = {
     getAllUser,
     getDetailsUser,
 };
+
+
+
