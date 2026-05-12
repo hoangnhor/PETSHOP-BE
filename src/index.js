@@ -29,7 +29,7 @@ const isAllowedVercelPreview = (origin) => {
     try {
         const { hostname, protocol } = new URL(origin);
         if (protocol !== 'https:') return false;
-        return hostname === 'petshop-fe.vercel.app' || hostname.startsWith('petshop-fe-') && hostname.endsWith('.vercel.app');
+        return hostname === 'htpetshop.vercel.app' || hostname.startsWith('htpetshop-') && hostname.endsWith('.vercel.app');
     } catch (error) {
         return false;
     }
