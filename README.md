@@ -108,3 +108,29 @@ src/
 ├── services/                    # Business logic, orchestration, persistence operations
 └── index.js                     # App bootstrap, CORS config, health, global error handling
 ```
+
+---
+
+## 🧪 CI/Staging (Production Safety)
+
+Workflow: `.github/workflows/be-ci.yml`
+
+Job chạy tự động:
+1. `npm test`
+2. `npm run lint`
+3. Probe DB staging (`npm run db:probe:staging`) nếu có secret DB
+4. Smoke live API (`npm run smoke:live`) trên branch `main`
+
+Secrets cần cấu hình trên GitHub:
+- `CI_ACCESS_TOKEN`
+- `CI_REFRESH_TOKEN`
+- `STAGING_MONGODB_URL`
+- `SMOKE_BASE_URL`
+- `SMOKE_LOGIN_EMAIL`
+- `SMOKE_LOGIN_PASSWORD`
+
+Script liên quan:
+```bash
+npm run db:probe:staging
+npm run smoke:live
+```

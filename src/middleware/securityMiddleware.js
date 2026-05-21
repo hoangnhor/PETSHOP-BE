@@ -1,6 +1,7 @@
 const WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60 * 1000);
 const MAX_REQUESTS_PER_WINDOW = Number(process.env.RATE_LIMIT_MAX || 180);
 const ipRequestMap = new Map();
+const scopedRateLimitMaps = new Map();
 
 const getClientIp = (req) => {
     const forwarded = req.headers['x-forwarded-for'];
@@ -43,6 +44,38 @@ const basicRateLimit = (req, res, next) => {
     return next();
 };
 
+const scopedRateLimit = ({ key = 'default', windowMs = 60 * 1000, max = 30, message = 'Quá nhiều yêu cầu, vui lòng thử lại sau' } = {}) => {
+    if (!scopedRateLimitMaps.has(key)) scopedRateLimitMaps.set(key, new Map());
+    const map = scopedRateLimitMaps.get(key);
+
+    return (req, res, next) => {
+        const now = Date.now();
+        const ip = getClientIp(req);
+        const current = map.get(ip);
+
+        if (map.size > 10000) {
+            for (const [k, entry] of map.entries()) {
+                if (!entry || now - entry.windowStart > windowMs * 2) map.delete(k);
+            }
+        }
+
+        if (!current || now - current.windowStart > windowMs) {
+            map.set(ip, { windowStart: now, count: 1 });
+            return next();
+        }
+
+        current.count += 1;
+        if (current.count > max) {
+            return res.status(429).json({
+                status: 'ERR',
+                code: 'RATE_LIMITED',
+                message,
+            });
+        }
+        return next();
+    };
+};
+
 const hasUnsafeKey = (value) => {
     if (!value || typeof value !== 'object') return false;
     if (Array.isArray(value)) return value.some(hasUnsafeKey);
@@ -67,5 +100,6 @@ const sanitizePayload = (req, res, next) => {
 
 module.exports = {
     basicRateLimit,
+    scopedRateLimit,
     sanitizePayload,
 };

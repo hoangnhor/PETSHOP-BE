@@ -2,6 +2,29 @@ const Type = require("../models/TypeModel");
 const Product = require("../models/ProductModel");
 const mongoose = require("mongoose");
 
+const TYPE_DISPLAY_ORDER = [
+    'Thức ăn chó',
+    'Phụ kiện cho chó',
+    'Vệ sinh chăm sóc chó',
+    'Chuồng, nhà, balo, Quây, Đệm cho chó',
+    'Thuốc Và Thực Phẩm Chức Năng cho chó',
+    'Thức ăn mèo',
+    'Phụ kiện cho mèo',
+    'Vệ sinh chăm sóc mèo',
+    'Chuồng, Chậu, Balo Và Túi Vận Chuyển cho mèo',
+    'Thuốc Và Thực Phẩm Chức Năng cho mèo',
+];
+
+const sortTypesForDisplay = (types = []) => {
+    const orderMap = new Map(TYPE_DISPLAY_ORDER.map((name, index) => [name, index]));
+    return [...types].sort((a, b) => {
+        const aOrder = orderMap.has(a.name) ? orderMap.get(a.name) : Number.MAX_SAFE_INTEGER;
+        const bOrder = orderMap.has(b.name) ? orderMap.get(b.name) : Number.MAX_SAFE_INTEGER;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return (a.name || '').localeCompare(b.name || '', 'vi');
+    });
+};
+
 const createType = (newType) => {
     return new Promise(async (resolve, reject) => {
         const { name } = newType;
@@ -36,10 +59,11 @@ const getAllType = () => {
     return new Promise(async (resolve, reject) => {
         try {
             const allType = await Type.find();
+            const sortedType = sortTypesForDisplay(allType);
             return resolve({
                 status: 'OK',
                 message: 'Thành công',
-                data: allType,
+                data: sortedType,
             });
         } catch (e) {
             reject(e);

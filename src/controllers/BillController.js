@@ -100,7 +100,7 @@ const deleteBill = async (req, res) => {
                 message: 'Bill ID bắt buộc',
             });
         }
-        const response = await BillService.deleteBill(billId);
+        const response = await BillService.deleteBill(billId, req.userId);
         return res.status(response.status === 'OK' ? 200 : 400).json(response);
     } catch (error) {
         return res.status(500).json({

@@ -3,11 +3,20 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node -e \"console.log(\\\"No automated backend tests yet\\\")\"",
+    "test": "node --test --test-concurrency=1 --test-isolation=none tests/critical-flows.test.js",
+    "test:integration": "node --test --test-concurrency=1 --test-isolation=none tests/critical-flows.test.js",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test:smoke": "node --check src/index.js",
-    "lint": "node --check src/index.js"
+    "lint": "node --check src/index.js",
+    "smoke:live": "node scripts/smokeLiveApi.js",
+    "db:probe:staging": "node scripts/stagingDbProbe.js",
+    "seed:be": "node scripts/seedRealisticData.js",
+    "db:seed:product-discounts": "node scripts/seedProductDiscounts.js",
+    "db:seed:product-selled": "node scripts/seedProductSelled.js",
+    "db:seed:catalog-structure": "node scripts/seedCatalogStructure.js",
+    "db:sync-model-indexes": "node scripts/syncModelIndexes.js",
+    "db:seed:core-master-data": "node scripts/seedCoreMasterData.js"
   },
   "engines": {
     "node": "20.x"

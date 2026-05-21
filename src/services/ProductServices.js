@@ -1,5 +1,6 @@
 const Product = require("../models/ProductModel");
 const Type = require("../models/TypeModel");
+const Review = require("../models/ReviewModel");
 const mongoose = require("mongoose");
 
 const validateProductNumbers = ({ price, countInStock, discount = 0 }) => {
@@ -202,6 +203,54 @@ const hydrateTypesForProducts = async (products) => {
     });
 };
 
+const attachReviewStatsForProducts = async (products = []) => {
+    const productIds = [
+        ...new Set(
+            products
+                .map((product) => product?._id)
+                .filter((id) => mongoose.isValidObjectId(id))
+                .map((id) => id.toString())
+        ),
+    ];
+    if (!productIds.length) return products;
+
+    const stats = await Review.aggregate([
+        {
+            $match: {
+                productId: { $in: productIds.map((id) => new mongoose.Types.ObjectId(id)) },
+                isVisible: true,
+            },
+        },
+        {
+            $group: {
+                _id: "$productId",
+                avgRating: { $avg: "$rating" },
+                reviewCount: { $sum: 1 },
+            },
+        },
+    ]);
+
+    const statsMap = new Map(
+        stats.map((item) => [
+            String(item._id),
+            {
+                rating: Number((item.avgRating || 0).toFixed(1)),
+                reviewCount: Number(item.reviewCount || 0),
+            },
+        ])
+    );
+
+    return products.map((product) => {
+        const key = String(product?._id || "");
+        const stat = statsMap.get(key) || { rating: 0, reviewCount: 0 };
+        return {
+            ...product,
+            rating: stat.rating,
+            reviewCount: stat.reviewCount,
+        };
+    });
+};
+
 const getAllProduct = (queryParams = {}) => {
     return new Promise(async (resolve, reject) => {
         try {
@@ -263,7 +312,8 @@ const getAllProduct = (queryParams = {}) => {
             const allProductRaw = await query
                 .limit(parsedLimit)
                 .skip(parsedPage * parsedLimit);
-            const allProduct = await hydrateTypesForProducts(allProductRaw);
+            const hydratedTypes = await hydrateTypesForProducts(allProductRaw);
+            const allProduct = await attachReviewStatsForProducts(hydratedTypes);
 
             return resolve({
                 status: 'OK',
@@ -295,7 +345,8 @@ const getDetailsProduct = (id) => {
                     message: 'Sản phẩm không tồn tại',
                 });
             }
-            const [hydratedProduct] = await hydrateTypesForProducts([product]);
+            const [hydratedTypeProduct] = await hydrateTypesForProducts([product]);
+            const [hydratedProduct] = await attachReviewStatsForProducts([hydratedTypeProduct]);
             return resolve({
                 status: 'OK',
                 message: 'Thành công',
@@ -312,7 +363,8 @@ const searchProduct = (keyword) => {
             const productsRaw = await Product.find({
                 name: { $regex: keyword, $options: 'i' },
             }).sort({ createdAt: -1 }).limit(50).lean();
-            const products = await hydrateTypesForProducts(productsRaw);
+            const hydratedTypes = await hydrateTypesForProducts(productsRaw);
+            const products = await attachReviewStatsForProducts(hydratedTypes);
 
             return resolve({
                 status: 'OK',

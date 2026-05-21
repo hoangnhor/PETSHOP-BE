@@ -68,6 +68,12 @@ const loginUser = (userLogin) => {
                     message: 'Người dùng không tồn tại',
                 });
             }
+            if (checkUser.status === 'blocked') {
+                return resolve({
+                    status: 'ERR',
+                    message: 'Tài khoản đã bị khóa',
+                });
+            }
             const comparePassword = bcrypt.compareSync(password, checkUser.password);
             if (!comparePassword) {
                 return resolve({
@@ -85,6 +91,7 @@ const loginUser = (userLogin) => {
                 email: checkUser.email,
                 isAdmin: checkUser.isAdmin,
             });
+            await User.updateOne({ _id: checkUser._id }, { $set: { lastLoginAt: new Date() } });
             return resolve({
                 status: 'OK',
                 message: 'Thành công',
