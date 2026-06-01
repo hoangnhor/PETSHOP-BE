@@ -1,136 +1,111 @@
-# 🛡️ petshop BE — Node.js Commerce API Core
+# PetShop Backend (BE)
 
-![Node.js](https://img.shields.io/badge/Node.js-20.x-339933?logo=node.js&logoColor=white)
-![Express](https://img.shields.io/badge/Express-4.x-000000?logo=express&logoColor=white)
-![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)
-![Mongoose](https://img.shields.io/badge/Mongoose-8.x-880000?logo=mongoose&logoColor=white)
-![JWT](https://img.shields.io/badge/JWT-Auth-000000?logo=jsonwebtokens&logoColor=white)
-![CORS](https://img.shields.io/badge/CORS-Enabled-2E7D32)
-![Cookie Parser](https://img.shields.io/badge/Cookie_Parser-1.x-795548)
+Backend API cho hệ thống thương mại điện tử thú cưng PetShop.
 
-> “petshop BE” là lõi nghiệp vụ e-commerce: bảo vệ tài nguyên bằng phân quyền nhiều lớp, chuẩn hóa API contract, và đảm bảo các domain user/product/order vận hành nhất quán ở production.
+## Tech Stack
+- Node.js 20
+- Express 4
+- MongoDB + Mongoose
+- JWT (access token + refresh token)
+- Cookie Parser, CORS, Helmet
 
-- 🌐 Live API: `https://petshopbe.onrender.com`
-- 🌐 Live Frontend: `https://htpetshop.vercel.app/`
-- 🔗 Backend Repo: `https://github.com/hoangnhor/petshopBE`
-- 🔗 Frontend Repo: `https://github.com/hoangnhor/petshopFE`
+## Liên kết
+- Frontend Demo: https://htpetshop.vercel.app/
+- Backend Repo: https://github.com/hoangnhor/PETSHOP-BE
+- Frontend Repo: https://github.com/hoangnhor/PETSHOP-FE
 
----
-
-## 🔥 Điểm sáng Kỹ thuật (Technical Highlights)
-
-1. **Bảo mật & Phân quyền nhiều lớp (RBAC)**
-- `verifyToken`, `authUserMiddleware`, `authMiddleware` tách quyền theo use-case.
-- Bảo đảm “same user or admin” cho tài nguyên nhạy cảm.
-
-2. **Kiến trúc Layered để tối ưu bảo trì**
-- Chia tách `routes -> controllers -> services -> models`.
-- Giảm coupling, tăng khả năng mở rộng domain và tái sử dụng business logic.
-
-3. **Auth strategy chuẩn production**
-- Access token ngắn hạn + refresh token dài hạn qua cookie httpOnly.
-- Cân bằng giữa bảo mật phiên và trải nghiệm người dùng frontend.
-
-4. **Response/Error contract nhất quán**
-- Chuẩn hóa payload `status/code/message` (và path cho 404).
-- Hỗ trợ debug production nhanh và ổn định FE integration.
-
----
-
-## 🗄️ Database Design
-
-| Collection | Mục đích | Trường cốt lõi | Quan hệ |
-|---|---|---|---|
-| `users` | Tài khoản & phân quyền | `name`, `email`, `password`, `isAdmin`, `phone`, `address`, `avatar` | 1-N với `bills` |
-| `types` | Danh mục sản phẩm | `name` | 1-N với `products` |
-| `products` | Catalog sản phẩm | `name`, `image`, `type`, `price`, `countInStock`, `discount`, `selled` | `type` ref `types` |
-| `bills` | Đơn hàng | `iduser`, `items[]`, `shippingAddress`, `paymentMethod`, `paymentStatus`, `orderStatus`, `tongtien` | `iduser` ref `users`, `items.idsp` ref `products` |
-
----
-
-## 🔄 Luồng nghiệp vụ cốt lõi (Core Flow)
-
+## Kiến trúc
 ```text
-Client Login
-  -> POST /api/user/sign-in
-     -> Validate credentials
-        -> Issue access_token + refresh_token(cookie)
-           -> Protected API call with Bearer token
-              -> Middleware verifies role/context
-                 -> Service executes business logic
-                    -> MongoDB read/write
-                       -> Standardized response back to client
+src/
+  routes/
+  controllers/
+  services/
+  models/
+  middleware/
+  config/
+  utils/
+  app.js
+  index.js
 ```
 
-```text
-Checkout
-  -> POST /api/bill/create
-     -> Verify token
-        -> Validate payload + stock constraints
-           -> Persist order (bill)
-              -> Admin updates order status through secured endpoints
-```
+## Module nghiệp vụ
+- User/Auth
+- Product/Type (catalog)
+- Cart/Wishlist
+- Bill/Checkout/Order lifecycle
+- Coupon
+- Appointment/Pet/Service
+- Inventory log
 
----
+## Bảo mật & kiểm soát
+- JWT dual-token:
+  - Access token: Bearer token
+  - Refresh token: httpOnly cookie
+- Refresh token rotation + reuse grace window.
+- Middleware phân quyền admin/user và kiểm tra trạng thái blocked từ DB.
+- CORS allowlist theo `CLIENT_URL` + domain preview.
+- Rate limiting (global + scoped).
+- Sanitize payload chống key injection (`$`, `.`).
+- Verify chữ ký payment webhook (HMAC SHA256).
 
-## 🚀 Cài đặt & Khởi chạy (Local Development)
-
+## Cài đặt và chạy local
 ```bash
 cd BE
 npm install
 npm run dev
 ```
 
-`.env`
+Backend mặc định chạy ở `http://localhost:3030`.
+
+## Biến môi trường
+Tạo file `.env` trong thư mục `BE`:
+
 ```env
 PORT=3030
+NODE_ENV=development
+MONGODB_URL=mongodb+srv://<user>:<pass>@<cluster>/<db>
+ACCESS_TOKEN=your_access_secret
+REFRESH_TOKEN=your_refresh_secret
 CLIENT_URL=http://localhost:3000,https://htpetshop.vercel.app
-MONGODB_URL=mongodb+srv://<username>:<password>@<cluster>/<database>?retryWrites=true&w=majority
-ACCESS_TOKEN=<your_access_token_secret>
-REFRESH_TOKEN=<your_refresh_token_secret>
+
+# cookie/auth
+COOKIE_SECURE=false
+COOKIE_SAMESITE=lax
+REFRESH_TOKEN_EXPIRES_IN=90d
+REFRESH_TOKEN_COOKIE_MAX_AGE_MS=31536000000
+REFRESH_TOKEN_REUSE_GRACE_MS=120000
+
+# rate limit
+RATE_LIMIT_STORE=mongo
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX=180
+LOGIN_RATE_LIMIT_WINDOW_MS=900000
+LOGIN_RATE_LIMIT_MAX=10
+BILL_CREATE_RATE_LIMIT_WINDOW_MS=60000
+BILL_CREATE_RATE_LIMIT_MAX=8
+
+# payment webhook
+PAYMENT_WEBHOOK_ENABLED=false
+PAYMENT_WEBHOOK_SECRET=your_webhook_secret
 ```
 
-Production run:
+## Scripts
 ```bash
-npm start
+npm run dev                 # chạy local (watch)
+npm start                   # chạy production mode
+npm test                    # chạy toàn bộ test
+npm run test:integration    # test integration
+npm run lint                # syntax/lint check
+npm run smoke:live          # smoke API thật
+npm run db:probe:staging    # probe DB staging
+npm run seed:be             # seed dữ liệu
 ```
 
----
+## Endpoint health
+- `GET /health`
+- `GET /ready`
 
-## 📂 Cấu trúc mã nguồn (Folder Structure)
-
-```text
-src/
-├── controllers/                 # HTTP layer: validate input, map status code, shape response
-├── middleware/                  # AuthN/AuthZ, token verification, security guards
-├── models/                      # Mongoose schemas + collection contracts
-├── routes/                      # Endpoint declarations theo domain
-├── services/                    # Business logic, orchestration, persistence operations
-└── index.js                     # App bootstrap, CORS config, health, global error handling
-```
-
----
-
-## 🧪 CI/Staging (Production Safety)
-
-Workflow: `.github/workflows/be-ci.yml`
-
-Job chạy tự động:
-1. `npm test`
-2. `npm run lint`
-3. Probe DB staging (`npm run db:probe:staging`) nếu có secret DB
-4. Smoke live API (`npm run smoke:live`) trên branch `main`
-
-Secrets cần cấu hình trên GitHub:
-- `CI_ACCESS_TOKEN`
-- `CI_REFRESH_TOKEN`
-- `STAGING_MONGODB_URL`
-- `SMOKE_BASE_URL`
-- `SMOKE_LOGIN_EMAIL`
-- `SMOKE_LOGIN_PASSWORD`
-
-Script liên quan:
-```bash
-npm run db:probe:staging
-npm run smoke:live
-```
+## Ghi chú deploy
+- Set đúng `CLIENT_URL` cho domain FE.
+- Bật `COOKIE_SECURE=true` và `COOKIE_SAMESITE=none` khi chạy HTTPS production.
+- Cấu hình `PAYMENT_WEBHOOK_SECRET` nếu bật webhook callback.
