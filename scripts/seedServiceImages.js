@@ -10,29 +10,27 @@ const SERVICE_IMAGE_DIR = path.resolve(__dirname, '../../FE/public/service-image
 
 const services = [
   {
-    code: 'GR-PREMIUM',
-    fallbackCode: 'SPA-RELAX',
+    code: 'HT-PET-HOTEL',
     sourcePrefix:
-      'Hình ảnh dịch vụ spa thú cưng, chó đang được tắm rửa chăm sóc, bồn tắm bọt xà phòng, phong cách nhiếp ảnh chuyên nghiệp, màu sắc sạch sẽ tươi sáng',
-    imageFile: 'service-spa-thu-cung.jpg',
+      'Hình ảnh dịch vụ khách sạn thú cưng, chó hoặc mèo trong phòng nghỉ thoải mái, giường êm ái, đồ chơi, không gian ấm cúng, phong cách nhiếp ảnh chuyên nghiệp, màu sắc ấm áp',
+    imageFile: 'service-khach-san-thu-cung.jpg',
     data: {
-      name: 'Spa thú cưng',
-      slug: 'spa-thu-cung',
-      category: 'spa',
+      name: 'Khách sạn thú cưng',
+      slug: 'khach-san-thu-cung',
+      category: 'combo',
       species: 'all',
-      description: 'Dịch vụ tắm rửa và chăm sóc thư giãn cho thú cưng trong môi trường sạch sẽ.',
-      durationMin: 60,
-      price: 280000,
+      description: 'Dịch vụ lưu trú thú cưng trong không gian ấm cúng, an toàn và thoải mái.',
+      durationMin: 1440,
+      price: 320000,
       salePrice: 0,
-      includes: ['Tắm gội', 'Làm sạch tai', 'Sấy khô'],
-      exclusions: [],
+      includes: ['Phòng nghỉ riêng', 'Theo dõi cơ bản', 'Vệ sinh khu vực nghỉ'],
+      exclusions: ['Điều trị y tế chuyên sâu'],
       isActive: true,
       sortOrder: 1,
     },
   },
   {
     code: 'GR-DOG-STYLING',
-    fallbackCode: 'GRM-BASIC',
     sourcePrefix:
       'Hình ảnh dịch vụ grooming cắt tỉa lông thú cưng, chó đang được cắt tỉa lông chuyên nghiệp, phong cách nhiếp ảnh đẹp, màu sắc sáng',
     imageFile: 'service-grooming-cat-tia.jpg',
@@ -52,6 +50,26 @@ const services = [
     },
   },
   {
+    code: 'CAT-CLEAN-DEEP',
+    sourcePrefix:
+      'Hình ảnh dịch vụ spa thú cưng, chó đang được tắm rửa chăm sóc, bồn tắm bọt xà phòng, phong cách nhiếp ảnh chuyên nghiệp, màu sắc sạch sẽ tươi sáng',
+    imageFile: 'service-spa-thu-cung.jpg',
+    data: {
+      name: 'Vệ sinh mèo chuyên sâu',
+      slug: 've-sinh-meo-chuyen-sau',
+      category: 'spa',
+      species: 'cat',
+      description: 'Vệ sinh và chăm sóc làm sạch chuyên sâu cho mèo.',
+      durationMin: 60,
+      price: 250000,
+      salePrice: 0,
+      includes: ['Tắm gội', 'Sấy khô', 'Vệ sinh tai cơ bản'],
+      exclusions: [],
+      isActive: true,
+      sortOrder: 3,
+    },
+  },
+  {
     code: 'VT-HEALTH-CHECK',
     sourcePrefix:
       'Hình ảnh dịch vụ khám sức khỏe thú y, bác sĩ thú y đang khám chó hoặc mèo, phòng khám thú y chuyên nghiệp, phong cách nhiếp ảnh đẹp, màu sắc sạch sẽ',
@@ -67,26 +85,6 @@ const services = [
       salePrice: 0,
       includes: ['Khám tổng quát', 'Tư vấn bác sĩ thú y'],
       exclusions: ['Xét nghiệm chuyên sâu'],
-      isActive: true,
-      sortOrder: 3,
-    },
-  },
-  {
-    code: 'HT-PET-HOTEL',
-    sourcePrefix:
-      'Hình ảnh dịch vụ khách sạn thú cưng, chó hoặc mèo trong phòng nghỉ thoải mái, giường êm ái, đồ chơi, không gian ấm cúng, phong cách nhiếp ảnh chuyên nghiệp, màu sắc ấm áp',
-    imageFile: 'service-khach-san-thu-cung.jpg',
-    data: {
-      name: 'Khách sạn thú cưng',
-      slug: 'khach-san-thu-cung',
-      category: 'combo',
-      species: 'all',
-      description: 'Dịch vụ lưu trú thú cưng trong không gian ấm cúng, an toàn và thoải mái.',
-      durationMin: 1440,
-      price: 320000,
-      salePrice: 0,
-      includes: ['Phòng nghỉ riêng', 'Theo dõi cơ bản', 'Vệ sinh khu vực nghỉ'],
-      exclusions: ['Điều trị y tế chuyên sâu'],
       isActive: true,
       sortOrder: 4,
     },
@@ -121,10 +119,7 @@ async function run() {
     fs.copyFileSync(sourceFile, destPath);
     const image = `/service-images/${item.imageFile}`;
 
-    let exists = await Service.findOne({ code: item.code }).lean();
-    if (!exists?._id && item.fallbackCode) {
-      exists = await Service.findOne({ code: item.fallbackCode }).lean();
-    }
+    const exists = await Service.findOne({ code: item.code }).lean();
 
     const payload = { ...item.data, code: item.code, image };
     if (exists?._id) {

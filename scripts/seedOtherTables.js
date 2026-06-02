@@ -54,32 +54,60 @@ async function run() {
 
   const services = [
     {
-      code: 'GRM-BASIC',
-      name: 'Tắm Grooming Cơ Bản',
-      slug: 'tam-grooming-co-ban',
-      category: 'grooming',
-      species: 'dog',
-      durationMin: 60,
-      price: 180000,
-      salePrice: 150000,
-      description: 'Tắm, sấy và vệ sinh tai cơ bản cho chó.',
-      includes: ['Tắm', 'Sấy', 'Vệ sinh tai'],
+      code: 'HT-PET-HOTEL',
+      name: 'Khách sạn thú cưng',
+      slug: 'khach-san-thu-cung',
+      category: 'combo',
+      species: 'all',
+      durationMin: 1440,
+      price: 320000,
+      salePrice: 0,
+      description: 'Dịch vụ lưu trú thú cưng trong không gian ấm cúng, an toàn và thoải mái.',
+      includes: ['Phòng nghỉ riêng', 'Theo dõi cơ bản', 'Vệ sinh khu vực nghỉ'],
       isActive: true,
       sortOrder: 1,
     },
     {
-      code: 'SPA-RELAX',
-      name: 'Spa Thư Giãn',
-      slug: 'spa-thu-gian',
-      category: 'spa',
-      species: 'all',
+      code: 'GR-DOG-STYLING',
+      name: 'Grooming cắt tỉa lông',
+      slug: 'grooming-cat-tia-long-thu-cung',
+      category: 'grooming',
+      species: 'dog',
       durationMin: 75,
-      price: 250000,
+      price: 350000,
       salePrice: 0,
-      description: 'Massage nhẹ và dưỡng lông chuyên sâu.',
-      includes: ['Massage', 'Dưỡng lông'],
+      description: 'Dịch vụ cắt tỉa lông chuyên nghiệp, tạo kiểu gọn gàng cho chó.',
+      includes: ['Cắt tỉa lông', 'Tỉa vệ sinh', 'Chỉnh dáng lông'],
       isActive: true,
       sortOrder: 2,
+    },
+    {
+      code: 'CAT-CLEAN-DEEP',
+      name: 'Vệ sinh mèo chuyên sâu',
+      slug: 've-sinh-meo-chuyen-sau',
+      category: 'spa',
+      species: 'cat',
+      durationMin: 60,
+      price: 250000,
+      salePrice: 0,
+      description: 'Vệ sinh và chăm sóc làm sạch chuyên sâu cho mèo.',
+      includes: ['Tắm gội', 'Sấy khô', 'Vệ sinh tai cơ bản'],
+      isActive: true,
+      sortOrder: 3,
+    },
+    {
+      code: 'VT-HEALTH-CHECK',
+      name: 'Khám sức khỏe thú y',
+      slug: 'kham-suc-khoe-thu-y',
+      category: 'medical-basic',
+      species: 'all',
+      durationMin: 45,
+      price: 250000,
+      salePrice: 0,
+      description: 'Khám tổng quát và tư vấn sức khỏe định kỳ cho chó mèo.',
+      includes: ['Khám tổng quát', 'Tư vấn bác sĩ thú y'],
+      isActive: true,
+      sortOrder: 4,
     },
   ];
 
@@ -222,7 +250,7 @@ async function run() {
     { upsert: true, new: true }
   );
 
-  const serviceDocs = await Service.find({ isActive: true }).sort({ sortOrder: 1 }).limit(2).lean();
+  const serviceDocs = await Service.find({ isActive: true }).sort({ sortOrder: 1 }).limit(4).lean();
   if (serviceDocs.length === 0) throw new Error('Không có dịch vụ để tạo lịch hẹn mẫu');
 
   const durationMin = serviceDocs.reduce((sum, s) => sum + Number(s.durationMin || 0), 0);
