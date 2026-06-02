@@ -1,9 +1,10 @@
 const BillService = require('../services/BillServices');
+const { getResponseStatusCode } = require('../utils/httpStatus');
 
 const createBill = async (req, res) => {
     try {
         const response = await BillService.createBill(req.body, req.userId);
-        return res.status(response.status === 'OK' ? 201 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 201)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -16,7 +17,7 @@ const createBill = async (req, res) => {
 const getAllBill = async (req, res) => {
     try {
         const response = await BillService.getAllBill(req.userId, req.isAdmin, req.query);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -36,7 +37,7 @@ const getDetailsBill = async (req, res) => {
             });
         }
         const response = await BillService.getDetailsBill(billId, req.userId, req.isAdmin);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -56,7 +57,7 @@ const updateBillStatus = async (req, res) => {
             });
         }
         const response = await BillService.updateBillStatus(billId, req.body);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -81,7 +82,7 @@ const cancelBill = async (req, res) => {
             req.isAdmin,
             req.body?.cancelReason
         );
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -101,7 +102,21 @@ const deleteBill = async (req, res) => {
             });
         }
         const response = await BillService.deleteBill(billId, req.userId);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
+    } catch (error) {
+        return res.status(500).json({
+            status: 'ERR',
+            code: 'INTERNAL_ERROR',
+            message: 'Lỗi hệ thống',
+        });
+    }
+};
+
+const confirmPaymentWebhook = async (req, res) => {
+    try {
+        const signature = req.headers['x-payment-signature'] || req.headers['x-webhook-signature'] || '';
+        const response = await BillService.confirmPaymentFromWebhook(req.body, signature, req.rawBody);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -118,6 +133,9 @@ module.exports = {
     updateBillStatus,
     cancelBill,
     deleteBill,
+    confirmPaymentWebhook,
 };
+
+
 
 

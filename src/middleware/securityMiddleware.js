@@ -1,78 +1,197 @@
-const WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60 * 1000);
-const MAX_REQUESTS_PER_WINDOW = Number(process.env.RATE_LIMIT_MAX || 180);
-const ipRequestMap = new Map();
+const mongoose = require('mongoose');
+const RateLimitCounter = require('../models/RateLimitCounterModel');
+const { env, parsePositiveInteger } = require('../config/env');
+
+const WINDOW_MS = env.rateLimitWindowMs;
+const MAX_REQUESTS_PER_WINDOW = env.rateLimitMax;
+const MAX_TRACKED_IPS = 10000;
+const RATE_LIMIT_FALLBACK_LOG_COOLDOWN_MS = 60 * 1000;
+const basicMemoryMap = new Map();
 const scopedRateLimitMaps = new Map();
+const rateLimitFallbackLogByScope = new Map();
 
 const getClientIp = (req) => {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string' && forwarded.length) {
-        return forwarded.split(',')[0].trim();
-    }
-    return req.ip || req.connection?.remoteAddress || 'unknown';
+    const rawIp = req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown';
+    return typeof rawIp === 'string' && rawIp.startsWith('::ffff:') ? rawIp.slice(7) : rawIp;
 };
 
-const compactRateLimitMap = (now) => {
-    if (ipRequestMap.size <= 10000) return;
-    for (const [key, entry] of ipRequestMap.entries()) {
-        if (!entry || now - entry.windowStart > WINDOW_MS * 2) {
-            ipRequestMap.delete(key);
+const setRateLimitHeaders = (res, { max, remaining, windowStartMs, windowMs }) => {
+    res.setHeader('x-ratelimit-limit', String(max));
+    res.setHeader('x-ratelimit-remaining', String(Math.max(remaining, 0)));
+    res.setHeader('x-ratelimit-reset', String(Math.ceil((windowStartMs + windowMs) / 1000)));
+};
+
+const compactRateLimitMap = (map, now, windowMs) => {
+    if (map.size <= MAX_TRACKED_IPS) return;
+    for (const [key, entry] of map.entries()) {
+        if (!entry || now - entry.windowStartMs > windowMs * 2) {
+            map.delete(key);
         }
     }
 };
 
-const basicRateLimit = (req, res, next) => {
+const consumeMemoryCounter = ({ map, ip, windowMs, now }) => {
+    compactRateLimitMap(map, now, windowMs);
+    const windowStartMs = Math.floor(now / windowMs) * windowMs;
+    const cacheKey = `${ip}:${windowStartMs}`;
+    const currentCount = map.get(cacheKey) || 0;
+    const nextCount = currentCount + 1;
+    map.set(cacheKey, nextCount);
+    return {
+        count: nextCount,
+        windowStartMs,
+    };
+};
+
+const shouldUseMongoRateLimit = () =>
+    env.rateLimitStore === 'mongo' && mongoose.connection?.readyState === 1;
+
+const logRateLimitFallback = (scope, error) => {
     const now = Date.now();
-    const ip = getClientIp(req);
-    const current = ipRequestMap.get(ip);
+    const lastLoggedAt = rateLimitFallbackLogByScope.get(scope) || 0;
+    if (now - lastLoggedAt < RATE_LIMIT_FALLBACK_LOG_COOLDOWN_MS) return;
+    rateLimitFallbackLogByScope.set(scope, now);
+    console.error(JSON.stringify({
+        level: 'error',
+        code: 'RATE_LIMIT_FALLBACK_MEMORY',
+        scope,
+        message: error?.message || 'Mongo rate-limit store unavailable, switched to memory store',
+        timestamp: new Date(now).toISOString(),
+    }));
+};
 
-    compactRateLimitMap(now);
+const consumeMongoCounter = async ({ scope, ip, windowMs, now }) => {
+    const windowStartMs = Math.floor(now / windowMs) * windowMs;
+    const windowStart = new Date(windowStartMs);
+    const expiresAt = new Date(windowStartMs + windowMs * 2);
+    let lastError;
 
-    if (!current || now - current.windowStart > WINDOW_MS) {
-        ipRequestMap.set(ip, { windowStart: now, count: 1 });
-        return next();
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+            const counter = await RateLimitCounter.findOneAndUpdate(
+                { scope, ip, windowStart },
+                {
+                    $setOnInsert: { scope, ip, windowStart, expiresAt },
+                    $inc: { count: 1 },
+                    $max: { expiresAt },
+                },
+                {
+                    upsert: true,
+                    new: true,
+                    setDefaultsOnInsert: true,
+                }
+            ).lean();
+
+            return {
+                count: Number(counter?.count || 1),
+                windowStartMs,
+            };
+        } catch (error) {
+            if (error?.code === 11000) {
+                lastError = error;
+                continue;
+            }
+            throw error;
+        }
     }
 
-    current.count += 1;
-    if (current.count > MAX_REQUESTS_PER_WINDOW) {
-        return res.status(429).json({
-            status: 'ERR',
-            code: 'RATE_LIMITED',
-            message: 'Quá nhiều yêu cầu, vui lòng thử lại sau',
+    throw lastError || new Error('Không thể cập nhật bộ đếm rate limit');
+};
+
+const consumeCounter = async ({ scope, ip, windowMs, now, memoryMap }) => {
+    if (shouldUseMongoRateLimit()) {
+        try {
+            return await consumeMongoCounter({ scope, ip, windowMs, now });
+        } catch (error) {
+            // Fallback memory để không làm gián đoạn request nếu DB rate-limit gặp lỗi tạm thời.
+            logRateLimitFallback(scope, error);
+            return consumeMemoryCounter({ map: memoryMap, ip, windowMs, now });
+        }
+    }
+    return consumeMemoryCounter({ map: memoryMap, ip, windowMs, now });
+};
+
+const sendRateLimitResponse = (res, message) =>
+    res.status(429).json({
+        status: 'ERR',
+        code: 'RATE_LIMITED',
+        message,
+    });
+
+const basicRateLimit = async (req, res, next) => {
+    try {
+        const now = Date.now();
+        const ip = getClientIp(req);
+        const max = MAX_REQUESTS_PER_WINDOW;
+        const counter = await consumeCounter({
+            scope: 'global-basic',
+            ip,
+            windowMs: WINDOW_MS,
+            now,
+            memoryMap: basicMemoryMap,
         });
-    }
 
-    return next();
+        setRateLimitHeaders(res, {
+            max,
+            remaining: max - counter.count,
+            windowStartMs: counter.windowStartMs,
+            windowMs: WINDOW_MS,
+        });
+
+        if (counter.count > max) {
+            return sendRateLimitResponse(res, 'Quá nhiều yêu cầu, vui lòng thử lại sau');
+        }
+
+        return next();
+    } catch (error) {
+        return next(error);
+    }
 };
 
 const scopedRateLimit = ({ key = 'default', windowMs = 60 * 1000, max = 30, message = 'Quá nhiều yêu cầu, vui lòng thử lại sau' } = {}) => {
-    if (!scopedRateLimitMaps.has(key)) scopedRateLimitMaps.set(key, new Map());
-    const map = scopedRateLimitMaps.get(key);
+    const normalizedKey = String(key || 'default');
+    const normalizedWindowMs = parsePositiveInteger(windowMs, {
+        defaultValue: 60 * 1000,
+        min: 1000,
+        max: 60 * 60 * 1000,
+    });
+    const normalizedMax = parsePositiveInteger(max, {
+        defaultValue: 30,
+        min: 1,
+        max: 100000,
+    });
 
-    return (req, res, next) => {
-        const now = Date.now();
-        const ip = getClientIp(req);
-        const current = map.get(ip);
+    if (!scopedRateLimitMaps.has(normalizedKey)) {
+        scopedRateLimitMaps.set(normalizedKey, new Map());
+    }
+    const map = scopedRateLimitMaps.get(normalizedKey);
 
-        if (map.size > 10000) {
-            for (const [k, entry] of map.entries()) {
-                if (!entry || now - entry.windowStart > windowMs * 2) map.delete(k);
-            }
-        }
-
-        if (!current || now - current.windowStart > windowMs) {
-            map.set(ip, { windowStart: now, count: 1 });
-            return next();
-        }
-
-        current.count += 1;
-        if (current.count > max) {
-            return res.status(429).json({
-                status: 'ERR',
-                code: 'RATE_LIMITED',
-                message,
+    return async (req, res, next) => {
+        try {
+            const now = Date.now();
+            const ip = getClientIp(req);
+            const counter = await consumeCounter({
+                scope: `scope-${normalizedKey}`,
+                ip,
+                windowMs: normalizedWindowMs,
+                now,
+                memoryMap: map,
             });
+
+            setRateLimitHeaders(res, {
+                max: normalizedMax,
+                remaining: normalizedMax - counter.count,
+                windowStartMs: counter.windowStartMs,
+                windowMs: normalizedWindowMs,
+            });
+
+            if (counter.count > normalizedMax) {
+                return sendRateLimitResponse(res, message);
+            }
+            return next();
+        } catch (error) {
+            return next(error);
         }
-        return next();
     };
 };
 

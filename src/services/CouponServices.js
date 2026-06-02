@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const Coupon = require('../models/CouponModel');
+const Bill = require('../models/BillModel');
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const nowInRange = (coupon) => {
     const now = Date.now();
@@ -23,9 +25,25 @@ const updateCoupon = async (id, payload) => {
     const updateData = { ...payload };
     if (updateData.code) updateData.code = String(updateData.code).trim().toUpperCase();
     if (updateData.discountValue !== undefined) updateData.discountValue = Number(updateData.discountValue);
-    const updated = await Coupon.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
-    if (!updated) return { status: 'ERR', message: 'Coupon không tồn tại' };
-    return { status: 'OK', message: 'Cập nhật coupon thành công', data: updated };
+    if (updateData.code) {
+        const duplicated = await Coupon.findOne({
+            code: updateData.code,
+            _id: { $ne: id },
+        }).lean();
+        if (duplicated) {
+            return { status: 'ERR', message: 'Mã giảm giá đã tồn tại' };
+        }
+    }
+    try {
+        const updated = await Coupon.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
+        if (!updated) return { status: 'ERR', message: 'Coupon không tồn tại' };
+        return { status: 'OK', message: 'Cập nhật coupon thành công', data: updated };
+    } catch (error) {
+        if (error?.code === 11000) {
+            return { status: 'ERR', message: 'Mã giảm giá đã tồn tại' };
+        }
+        throw error;
+    }
 };
 
 const deleteCoupon = async (id) => {
@@ -45,7 +63,10 @@ const getCouponDetail = async (id) => {
 const getAllCoupons = async (query = {}) => {
     const filter = {};
     if (query.isActive !== undefined) filter.isActive = String(query.isActive) === 'true';
-    if (query.keyword) filter.$or = [{ code: { $regex: query.keyword, $options: 'i' } }, { name: { $regex: query.keyword, $options: 'i' } }];
+    if (query.keyword) {
+        const keyword = escapeRegex(query.keyword);
+        filter.$or = [{ code: { $regex: keyword, $options: 'i' } }, { name: { $regex: keyword, $options: 'i' } }];
+    }
     const limit = Math.min(Math.max(parseInt(query.limit) || 50, 1), 200);
     const page = Math.max(parseInt(query.page) || 0, 0);
     const total = await Coupon.countDocuments(filter);
@@ -53,13 +74,26 @@ const getAllCoupons = async (query = {}) => {
     return { status: 'OK', message: 'Thành công', data, total, pageCurrent: page + 1, totalPage: Math.ceil(total / limit) };
 };
 
-const validateCouponCode = async (code, orderValue = 0) => {
+const validateCouponCode = async (code, orderValue = 0, userId = null) => {
     const normalizedCode = String(code || '').trim().toUpperCase();
     if (!normalizedCode) return { status: 'ERR', message: 'Mã giảm giá là bắt buộc' };
     const coupon = await Coupon.findOne({ code: normalizedCode, isActive: true }).lean();
     if (!coupon) return { status: 'ERR', message: 'Mã giảm giá không tồn tại' };
     if (!nowInRange(coupon)) return { status: 'ERR', message: 'Mã giảm giá chưa đến thời gian hoặc đã hết hạn' };
     if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) return { status: 'ERR', message: 'Mã giảm giá đã hết lượt sử dụng' };
+    if (userId && mongoose.isValidObjectId(userId) && Number(coupon.perUserLimit || 0) > 0) {
+        const usedByCurrentUser = await Bill.countDocuments({
+            iduser: userId,
+            'coupon.code': normalizedCode,
+            isDeleted: { $ne: true },
+        });
+        if (usedByCurrentUser >= Number(coupon.perUserLimit)) {
+            return {
+                status: 'ERR',
+                message: `Mỗi tài khoản chỉ được dùng mã này tối đa ${Number(coupon.perUserLimit)} lần`,
+            };
+        }
+    }
     if (Number(orderValue || 0) < Number(coupon.minOrderValue || 0)) return { status: 'ERR', message: `Đơn hàng chưa đạt tối thiểu ${Number(coupon.minOrderValue || 0).toLocaleString('vi-VN')}đ` };
     let discountAmount = 0;
     if (coupon.discountType === 'percent') {

@@ -6,15 +6,24 @@ const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const { basicRateLimit, sanitizePayload } = require('./middleware/securityMiddleware');
 const { requestContext } = require('./middleware/requestContextMiddleware');
+const { env } = require('./config/env');
 
 const buildApp = () => {
     const app = express();
-    app.set('trust proxy', 1);
-
-    const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:3000')
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter(Boolean);
+    app.set('trust proxy', env.trustProxy);
+    const defaultErrorCodeByStatus = {
+        400: 'BAD_REQUEST',
+        401: 'UNAUTHORIZED',
+        403: 'FORBIDDEN',
+        404: 'NOT_FOUND',
+        409: 'CONFLICT',
+        422: 'INVALID_PAYLOAD',
+        429: 'RATE_LIMITED',
+        500: 'INTERNAL_ERROR',
+        502: 'BAD_GATEWAY',
+        503: 'SERVICE_UNAVAILABLE',
+        504: 'GATEWAY_TIMEOUT',
+    };
 
     const isAllowedVercelPreview = (origin) => {
         if (!origin) return false;
@@ -29,10 +38,13 @@ const buildApp = () => {
 
     app.use(cors({
         origin: (origin, callback) => {
-            if (!origin || allowedOrigins.includes(origin) || isAllowedVercelPreview(origin)) {
+            if (!origin || env.clientOrigins.includes(origin) || isAllowedVercelPreview(origin)) {
                 return callback(null, true);
             }
-            return callback(new Error('Origin không được phép bởi CORS'));
+            const corsError = new Error('Origin không được phép bởi CORS');
+            corsError.statusCode = 403;
+            corsError.code = 'CORS_ORIGIN_DENIED';
+            return callback(corsError);
         },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
@@ -40,8 +52,31 @@ const buildApp = () => {
     }));
     app.use(helmet());
     app.use(requestContext);
+    app.use((req, res, next) => {
+        const originalJson = res.json.bind(res);
+        res.json = (body) => {
+            if (body && typeof body === 'object' && !Array.isArray(body)) {
+                const nextBody = { ...body };
+                if (nextBody.status === 'ERR' && !nextBody.code) {
+                    const statusCode = Number(res.statusCode) || 500;
+                    nextBody.code = defaultErrorCodeByStatus[statusCode] || 'BAD_REQUEST';
+                }
+                if (!nextBody.requestId && req.requestId) {
+                    nextBody.requestId = req.requestId;
+                }
+                return originalJson(nextBody);
+            }
+            return originalJson(body);
+        };
+        next();
+    });
     app.use(basicRateLimit);
-    app.use(express.json({ limit: '2mb' }));
+    app.use(express.json({
+        limit: '2mb',
+        verify: (req, res, buf) => {
+            req.rawBody = buf.toString('utf8');
+        },
+    }));
     app.use(express.urlencoded({ limit: '2mb', extended: true }));
     app.use(cookieParser());
     app.use(sanitizePayload);

@@ -47,6 +47,12 @@ const billSchema = new mongoose.Schema(
         },
         note: { type: String, default: '' },
         paidAt: { type: Date, default: null },
+        paymentGateway: {
+            provider: { type: String, default: '' },
+            transactionId: { type: String, default: '' },
+            rawStatus: { type: String, default: '' },
+            confirmedAt: { type: Date, default: null },
+        },
         shippedAt: { type: Date, default: null },
         deliveredAt: { type: Date, default: null },
         cancelledAt: { type: Date, default: null },
@@ -92,6 +98,7 @@ billSchema.pre('validate', function (next) {
 });
 
 billSchema.index({ iduser: 1, createdAt: -1 });
+billSchema.index({ iduser: 1, 'coupon.code': 1, isDeleted: 1, createdAt: -1 });
 billSchema.index({ orderStatus: 1, createdAt: -1 });
 billSchema.index({ paymentStatus: 1, createdAt: -1 });
 billSchema.index({ isDeleted: 1, createdAt: -1 });

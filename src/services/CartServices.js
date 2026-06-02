@@ -41,26 +41,33 @@ const upsertCartItems = async (userId, payload) => {
 
     for (const item of normalizedItems) {
         if (!mongoose.isValidObjectId(item.productId) || !Number.isInteger(item.quantity) || item.quantity < 1) {
-            return { status: 'ERR', message: 'Dữ liệu sản phẩm trong giỏ hàng không hợp lệ' };
+            return { status: 'ERR', code: 'INVALID_PAYLOAD', message: 'Dữ liệu sản phẩm trong giỏ hàng không hợp lệ' };
         }
     }
 
-    const uniqueProductIds = [...new Set(normalizedItems.map((item) => String(item.productId)))];
+    const mergedQuantityByProductId = new Map();
+    for (const item of normalizedItems) {
+        const key = String(item.productId);
+        const currentQty = Number(mergedQuantityByProductId.get(key) || 0);
+        mergedQuantityByProductId.set(key, currentQty + Number(item.quantity || 0));
+    }
+
+    const uniqueProductIds = [...mergedQuantityByProductId.keys()];
     const products = await Product.find({ _id: { $in: uniqueProductIds }, isActive: true }).lean();
     const productMap = new Map(products.map((product) => [String(product._id), product]));
 
     if (productMap.size !== uniqueProductIds.length) {
-        return { status: 'ERR', message: 'Có sản phẩm không tồn tại hoặc đã ngừng bán' };
+        return { status: 'ERR', code: 'NOT_FOUND', message: 'Có sản phẩm không tồn tại hoặc đã ngừng bán' };
     }
 
     const items = [];
-    for (const item of normalizedItems) {
-        const product = productMap.get(String(item.productId));
+    for (const [productId, quantity] of mergedQuantityByProductId.entries()) {
+        const product = productMap.get(String(productId));
         const stock = Number(product?.countInStock || 0);
-        if (item.quantity > stock) {
-            return { status: 'ERR', message: `Sản phẩm ${product.name} chỉ còn ${stock}` };
+        if (quantity > stock) {
+            return { status: 'ERR', code: 'CONFLICT', message: `Sản phẩm ${product.name} chỉ còn ${stock}` };
         }
-        items.push(buildCartItem(product, item.quantity));
+        items.push(buildCartItem(product, quantity));
     }
 
     const cart = await Cart.findOneAndUpdate(
@@ -85,18 +92,18 @@ const upsertCartItems = async (userId, payload) => {
 const addToCart = async (userId, payload) => {
     const { productId, quantity = 1 } = normalizeItemInput(payload);
     if (!mongoose.isValidObjectId(productId) || !Number.isInteger(quantity) || quantity < 1) {
-        return { status: 'ERR', message: 'Dữ liệu thêm giỏ hàng không hợp lệ' };
+        return { status: 'ERR', code: 'INVALID_PAYLOAD', message: 'Dữ liệu thêm giỏ hàng không hợp lệ' };
     }
 
     const product = await Product.findById(productId).lean();
     if (!product || !product.isActive) {
-        return { status: 'ERR', message: 'Sản phẩm không tồn tại hoặc đã ngừng bán' };
+        return { status: 'ERR', code: 'NOT_FOUND', message: 'Sản phẩm không tồn tại hoặc đã ngừng bán' };
     }
 
     const cart = await Cart.findOne({ userId });
     if (!cart) {
         const nextQty = Math.min(quantity, Number(product.countInStock || 0));
-        if (nextQty < 1) return { status: 'ERR', message: `Sản phẩm ${product.name} đã hết hàng` };
+        if (nextQty < 1) return { status: 'ERR', code: 'CONFLICT', message: `Sản phẩm ${product.name} đã hết hàng` };
         const created = await Cart.create({
             userId,
             items: [buildCartItem(product, nextQty)],
@@ -108,7 +115,7 @@ const addToCart = async (userId, payload) => {
     const currentQty = idx >= 0 ? Number(cart.items[idx].quantity || 0) : 0;
     const nextQty = currentQty + quantity;
     const stock = Number(product.countInStock || 0);
-    if (nextQty > stock) return { status: 'ERR', message: `Sản phẩm ${product.name} chỉ còn ${stock}` };
+    if (nextQty > stock) return { status: 'ERR', code: 'CONFLICT', message: `Sản phẩm ${product.name} chỉ còn ${stock}` };
 
     if (idx >= 0) {
         cart.items[idx] = buildCartItem(product, nextQty);
@@ -122,7 +129,7 @@ const addToCart = async (userId, payload) => {
 
 const removeCartItem = async (userId, productId) => {
     if (!mongoose.isValidObjectId(productId)) {
-        return { status: 'ERR', message: 'Product ID không hợp lệ' };
+        return { status: 'ERR', code: 'INVALID_PAYLOAD', message: 'Product ID không hợp lệ' };
     }
     const cart = await Cart.findOne({ userId });
     if (!cart) return { status: 'OK', message: 'Thành công', data: { userId, items: [] } };

@@ -5,10 +5,69 @@ const Cart = require('../models/CartModel');
 const InventoryLog = require('../models/InventoryLogModel');
 const Coupon = require('../models/CouponModel');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+const { env } = require('../config/env');
 
 const ORDER_STATUSES = ['pending', 'confirmed', 'shipping', 'delivered', 'cancelled'];
 const PAYMENT_STATUSES = ['unpaid', 'paid', 'refunded'];
 const PAYMENT_METHODS = ['COD', 'BANKING', 'MOMO', 'VNPAY'];
+const ORDER_STATUS_TRANSITIONS = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['shipping', 'cancelled'],
+  shipping: ['delivered', 'cancelled'],
+  delivered: [],
+  cancelled: [],
+};
+const PAYMENT_STATUS_TRANSITIONS = {
+  unpaid: ['paid'],
+  paid: ['refunded'],
+  refunded: [],
+};
+
+const canTransition = (transitions, current, next) => {
+  if (!next || current === next) return true;
+  const allowed = transitions[current] || [];
+  return allowed.includes(next);
+};
+
+const normalizePaymentWebhookStatus = (rawStatus = '') => {
+  const normalized = String(rawStatus || '').trim().toLowerCase();
+  if (['paid', 'success', 'succeeded', 'completed', 'done'].includes(normalized)) return 'paid';
+  if (['refunded', 'refund', 'reversed'].includes(normalized)) return 'refunded';
+  if (['failed', 'cancelled', 'canceled', 'declined'].includes(normalized)) return 'failed';
+  return '';
+};
+
+const normalizeRawWebhookBody = (rawBody, payload) => {
+  if (typeof rawBody === 'string' && rawBody.length) return rawBody;
+  if (Buffer.isBuffer(rawBody) && rawBody.length) return rawBody.toString('utf8');
+  // Fallback for direct service calls (tests/internal) when raw body is unavailable.
+  try {
+    return JSON.stringify(payload || {});
+  } catch (error) {
+    return '';
+  }
+};
+
+const isValidPaymentWebhookSignature = (payload, signatureHeader, rawBody = '') => {
+  if (!env.paymentWebhookSecret) return false;
+  const rawSignature = String(signatureHeader || '').trim();
+  if (!rawSignature) return false;
+  const receivedHex = rawSignature.startsWith('sha256=') ? rawSignature.slice(7) : rawSignature;
+  if (!/^[a-fA-F0-9]+$/.test(receivedHex)) return false;
+  const rawPayload = normalizeRawWebhookBody(rawBody, payload);
+  if (!rawPayload) return false;
+
+  const expectedHex = crypto
+    .createHmac('sha256', env.paymentWebhookSecret)
+    .update(rawPayload)
+    .digest('hex');
+
+  const expectedBuffer = Buffer.from(expectedHex, 'hex');
+  const receivedBuffer = Buffer.from(receivedHex, 'hex');
+  if (expectedBuffer.length !== receivedBuffer.length) return false;
+  return crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
+};
 
 const getShippingAddress = (shippingAddress, user) => ({
   fullName: shippingAddress?.fullName || user.name || '',
@@ -101,12 +160,28 @@ const createBill = async (newBill, userId) => {
       let couponInfo = null;
 
       if (normalizedCouponCode) {
-        const coupon = await Coupon.findOne({ code: normalizedCouponCode, isActive: true }).session(session);
+        // Lock coupon document inside transaction to avoid per-user limit race on concurrent checkout.
+        const coupon = await Coupon.findOneAndUpdate(
+          { code: normalizedCouponCode, isActive: true },
+          { $set: { updatedAt: new Date() } },
+          { new: true, session }
+        );
         if (!coupon) throw new Error('Mã giảm giá không tồn tại');
         const now = Date.now();
         if (coupon.startsAt && new Date(coupon.startsAt).getTime() > now) throw new Error('Mã giảm giá chưa đến thời gian sử dụng');
         if (coupon.endsAt && new Date(coupon.endsAt).getTime() < now) throw new Error('Mã giảm giá đã hết hạn');
         if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) throw new Error('Mã giảm giá đã hết lượt sử dụng');
+        const perUserLimit = Number(coupon.perUserLimit || 0);
+        if (perUserLimit > 0) {
+          const usedByCurrentUser = await Bill.countDocuments({
+            iduser: userId,
+            'coupon.code': normalizedCouponCode,
+            isDeleted: { $ne: true },
+          }).session(session);
+          if (usedByCurrentUser >= perUserLimit) {
+            throw new Error(`Mỗi tài khoản chỉ được dùng mã này tối đa ${perUserLimit} lần`);
+          }
+        }
         if (subTotal < Number(coupon.minOrderValue || 0)) throw new Error(`Đơn hàng chưa đạt tối thiểu ${Number(coupon.minOrderValue || 0).toLocaleString('vi-VN')}đ`);
 
         if (coupon.discountType === 'percent') {
@@ -144,7 +219,7 @@ const createBill = async (newBill, userId) => {
           items: orderItems,
           shippingAddress: normalizedShippingAddress,
           paymentMethod,
-          paymentStatus: paymentMethod === 'COD' ? 'unpaid' : 'paid',
+          paymentStatus: 'unpaid',
           orderStatus: 'pending',
           tongtien,
           pricing: {
@@ -160,7 +235,7 @@ const createBill = async (newBill, userId) => {
             discountAmount: couponDiscount,
           },
           note,
-          paidAt: paymentMethod === 'COD' ? null : new Date(),
+          paidAt: null,
         },
       ], { session });
       createdBill = createdBills[0];
@@ -223,7 +298,9 @@ const getDetailsBill = async (billId, userId, isAdmin) => {
   const bill = await Bill.findById(billId).populate('iduser', 'name email phone address').populate('items.idsp');
   if (!bill) return { status: 'ERR', message: 'Hóa đơn không tồn tại' };
   if (bill.isDeleted && !isAdmin) return { status: 'ERR', message: 'Hóa đơn không tồn tại' };
-  if (!isAdmin && bill.iduser._id.toString() !== userId) return { status: 'ERR', message: 'Bạn không có quyền xem hóa đơn này' };
+  const ownerId = String(bill.iduser?._id || bill.iduser || '');
+  if (!ownerId) return { status: 'ERR', message: 'Chủ đơn hàng không tồn tại' };
+  if (!isAdmin && ownerId !== String(userId)) return { status: 'ERR', message: 'Bạn không có quyền xem hóa đơn này' };
 
   return { status: 'OK', message: 'Thành công', data: bill };
 };
@@ -238,8 +315,26 @@ const updateBillStatus = async (billId, payload) => {
   if (orderStatus && !ORDER_STATUSES.includes(orderStatus)) return { status: 'ERR', message: 'Trạng thái đơn hàng không hợp lệ' };
   if (paymentStatus && !PAYMENT_STATUSES.includes(paymentStatus)) return { status: 'ERR', message: 'Trạng thái thanh toán không hợp lệ' };
   if (bill.orderStatus === 'cancelled') return { status: 'ERR', message: 'Không thể cập nhật đơn hàng đã hủy' };
+  if (orderStatus && !canTransition(ORDER_STATUS_TRANSITIONS, bill.orderStatus, orderStatus)) {
+    return {
+      status: 'ERR',
+      message: `Không thể chuyển đơn từ ${bill.orderStatus} sang ${orderStatus}`,
+    };
+  }
+  if (paymentStatus && !canTransition(PAYMENT_STATUS_TRANSITIONS, bill.paymentStatus, paymentStatus)) {
+    return {
+      status: 'ERR',
+      message: `Không thể chuyển thanh toán từ ${bill.paymentStatus} sang ${paymentStatus}`,
+    };
+  }
+  if (paymentStatus === 'refunded' && bill.orderStatus !== 'cancelled' && orderStatus !== 'cancelled') {
+    return { status: 'ERR', message: 'Chỉ có thể hoàn tiền cho đơn hàng đã hủy' };
+  }
 
   if (orderStatus === 'cancelled') return cancelBill(billId, null, true, cancelReason);
+  if (orderStatus === 'delivered' && paymentStatus === 'unpaid') {
+    return { status: 'ERR', message: 'Đơn đã giao không thể để trạng thái chưa thanh toán' };
+  }
 
   if (orderStatus) {
     bill.orderStatus = orderStatus;
@@ -338,6 +433,72 @@ const deleteBill = async (billId, actorUserId = null) => {
   return { status: 'OK', message: 'Ẩn đơn hàng thành công' };
 };
 
+const confirmPaymentFromWebhook = async (payload = {}, signatureHeader = '', rawBody = '') => {
+  if (!env.paymentWebhookSecret) {
+    return { status: 'ERR', message: 'PAYMENT_WEBHOOK_SECRET chưa được cấu hình' };
+  }
+  if (!isValidPaymentWebhookSignature(payload, signatureHeader, rawBody)) {
+    return { status: 'ERR', message: 'Chữ ký webhook không hợp lệ' };
+  }
+
+  const billId = payload.billId || payload.orderId || payload.bill_id;
+  if (!mongoose.isValidObjectId(billId)) {
+    return { status: 'ERR', message: 'billId không hợp lệ' };
+  }
+
+  const bill = await Bill.findById(billId);
+  if (!bill || bill.isDeleted) return { status: 'ERR', message: 'Hóa đơn không tồn tại' };
+
+  const normalizedStatus = normalizePaymentWebhookStatus(payload.status || payload.paymentStatus);
+  if (!normalizedStatus) return { status: 'ERR', message: 'Trạng thái webhook không hợp lệ' };
+
+  const providedAmount = Number(payload.amount);
+  if (Number.isFinite(providedAmount) && providedAmount > 0) {
+    const expectedAmount = Number(bill.tongtien || 0);
+    if (Math.round(providedAmount) !== Math.round(expectedAmount)) {
+      return { status: 'ERR', message: 'Số tiền thanh toán không khớp với đơn hàng' };
+    }
+  }
+
+  if (normalizedStatus === 'failed') {
+    bill.paymentGateway = {
+      provider: String(payload.provider || bill.paymentMethod || ''),
+      transactionId: String(payload.transactionId || payload.transaction_id || ''),
+      rawStatus: String(payload.status || ''),
+      confirmedAt: new Date(),
+    };
+    await bill.save();
+    return { status: 'OK', message: 'Đã ghi nhận giao dịch thất bại', data: bill };
+  }
+
+  if (normalizedStatus === 'paid') {
+    if (bill.orderStatus === 'cancelled') {
+      return { status: 'ERR', message: 'Không thể xác nhận thanh toán cho đơn hàng đã hủy' };
+    }
+    if (bill.paymentStatus !== 'paid') {
+      bill.paymentStatus = 'paid';
+      bill.paidAt = bill.paidAt || new Date();
+    }
+  }
+
+  if (normalizedStatus === 'refunded') {
+    if (bill.paymentStatus !== 'paid') {
+      return { status: 'ERR', message: 'Không thể hoàn tiền cho đơn chưa thanh toán' };
+    }
+    bill.paymentStatus = 'refunded';
+  }
+
+  bill.paymentGateway = {
+    provider: String(payload.provider || bill.paymentMethod || ''),
+    transactionId: String(payload.transactionId || payload.transaction_id || ''),
+    rawStatus: String(payload.status || ''),
+    confirmedAt: new Date(),
+  };
+  await bill.save();
+
+  return { status: 'OK', message: 'Xác nhận thanh toán thành công', data: bill };
+};
+
 module.exports = {
   createBill,
   getAllBill,
@@ -345,4 +506,5 @@ module.exports = {
   updateBillStatus,
   cancelBill,
   deleteBill,
+  confirmPaymentFromWebhook,
 };

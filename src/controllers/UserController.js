@@ -1,5 +1,16 @@
 const UserServices = require('../services/UserServices');
+const { getResponseStatusCode } = require('../utils/httpStatus');
 const JwtService = require('../services/JwtServices');
+const { env } = require('../config/env');
+const jwt = require('jsonwebtoken');
+
+const getRefreshTokenCookieOptions = () => ({
+    httpOnly: true,
+    secure: env.cookieSecure,
+    sameSite: env.cookieSameSite,
+    path: '/',
+    maxAge: env.refreshTokenCookieMaxAgeMs,
+});
 
 const createUser = async (req, res) => {
     try {
@@ -25,7 +36,7 @@ const createUser = async (req, res) => {
             });
         }
         const response = await UserServices.createUser(req.body);
-        return res.status(response.status === 'OK' ? 201 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 201)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -52,7 +63,7 @@ const createUserByAdmin = async (req, res) => {
             });
         }
         const response = await UserServices.createUser(req.body, true);
-        return res.status(response.status === 'OK' ? 201 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 201)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -82,15 +93,10 @@ const loginUser = async (req, res) => {
         const response = await UserServices.loginUser(req.body);
         if (response.status === 'OK') {
             const { refresh_token, ...newResponse } = response;
-            res.cookie('refresh_token', refresh_token, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-                path: '/',
-            });
+            res.cookie('refresh_token', refresh_token, getRefreshTokenCookieOptions());
             return res.status(200).json(newResponse);
         }
-        return res.status(400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -111,7 +117,7 @@ const updateUser = async (req, res) => {
             });
         }
         const response = await UserServices.updateUser(userId, data, req.isAdmin);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -131,7 +137,7 @@ const deleteUser = async (req, res) => {
             });
         }
         const response = await UserServices.deleteUser(userId, req.userId);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -144,7 +150,7 @@ const deleteUser = async (req, res) => {
 const getAllUser = async (req, res) => {
     try {
         const response = await UserServices.getAllUser(req.query);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -164,7 +170,7 @@ const getDetailsUser = async (req, res) => {
             });
         }
         const response = await UserServices.getDetailsUser(userId);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -180,10 +186,16 @@ const refreshToken = async (req, res) => {
         if (!token) {
             return res.status(401).json({
                 status: 'ERR',
+                code: 'TOKEN_MISSING',
                 message: 'Token bắt buộc',
             });
         }
         const response = await JwtService.refreshTokenJwtService(token);
+        if (response.status === 'OK' && response.refresh_token) {
+            res.cookie('refresh_token', response.refresh_token, getRefreshTokenCookieOptions());
+            const { refresh_token, ...safeResponse } = response;
+            return res.status(200).json(safeResponse);
+        }
         return res.status(response.status === 'OK' ? 200 : 401).json(response);
     } catch (e) {
         return res.status(500).json({
@@ -195,12 +207,21 @@ const refreshToken = async (req, res) => {
 };
 
 // Đăng xuất người dùng
-const logoutUser = (req, res) => {
+const logoutUser = async (req, res) => {
     try {
+        const token = req.cookies?.refresh_token;
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, env.refreshTokenSecret);
+                await JwtService.revokeRefreshTokenForUser(decoded?.id);
+            } catch (error) {
+                // Ignore invalid/expired token on logout and continue clearing cookie.
+            }
+        }
         res.clearCookie('refresh_token', {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            secure: env.cookieSecure,
+            sameSite: env.cookieSameSite,
             path: '/',
         });
 
@@ -229,6 +250,8 @@ module.exports = {
     refreshToken,
     logoutUser,
 };
+
+
 
 
 

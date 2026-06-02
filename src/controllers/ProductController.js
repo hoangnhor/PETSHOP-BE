@@ -1,4 +1,5 @@
 const ProductService = require('../services/ProductServices');
+const { getResponseStatusCode } = require('../utils/httpStatus');
 
 const createProduct = async (req, res) => {
     try {
@@ -10,7 +11,7 @@ const createProduct = async (req, res) => {
             });
         }
         const response = await ProductService.createProduct(req.body);
-        return res.status(response.status === 'OK' ? 201 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 201)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -31,7 +32,7 @@ const updateProduct = async (req, res) => {
             });
         }
         const response = await ProductService.updateProduct(productId, data);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -51,7 +52,7 @@ const getDetailsProduct = async (req, res) => {
             });
         }
         const response = await ProductService.getDetailsProduct(productId);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -71,7 +72,7 @@ const deleteProduct = async (req, res) => {
             });
         }
         const response = await ProductService.deleteProduct(productId);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -84,7 +85,7 @@ const deleteProduct = async (req, res) => {
 const getAllProduct = async (req, res) => {
     try {
         const response = await ProductService.getAllProduct(req.query);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -104,7 +105,7 @@ const searchProduct = async (req, res) => {
             });
         }
         const response = await ProductService.searchProduct(keyword);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (e) {
         return res.status(500).json({
             status: 'ERR',
@@ -122,5 +123,7 @@ module.exports = {
     getAllProduct,
     searchProduct,
 };
+
+
 
 

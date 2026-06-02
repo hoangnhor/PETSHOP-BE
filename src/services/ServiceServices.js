@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Service = require('../models/ServiceModel');
 
 const normalizeText = (value = '') => String(value || '').trim();
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const validatePayload = (payload, isCreate = true) => {
     const required = ['code', 'name', 'slug', 'durationMin', 'price'];
@@ -66,7 +67,10 @@ const updateService = async (id, payload) => {
         if (check) return { status: 'ERR', message: 'code hoặc slug đã tồn tại' };
     }
 
-    const updated = await Service.findByIdAndUpdate(id, updateData, { new: true });
+    const updated = await Service.findByIdAndUpdate(id, updateData, {
+        new: true,
+        runValidators: true,
+    });
     return { status: 'OK', message: 'Cập nhật dịch vụ thành công', data: updated };
 };
 
@@ -97,7 +101,7 @@ const getAllServices = async (query = {}) => {
     if (query.isActive !== undefined) filter.isActive = String(query.isActive) === 'true';
     if (query.species) filter.species = query.species;
     if (query.category) filter.category = query.category;
-    if (query.keyword) filter.name = { $regex: query.keyword, $options: 'i' };
+    if (query.keyword) filter.name = { $regex: escapeRegex(query.keyword), $options: 'i' };
     const limit = Math.min(Math.max(parseInt(query.limit) || 50, 1), 200);
     const page = Math.max(parseInt(query.page) || 0, 0);
     const total = await Service.countDocuments(filter);

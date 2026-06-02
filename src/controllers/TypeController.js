@@ -1,9 +1,10 @@
 const TypeService = require('../services/TypeServices');
+const { getResponseStatusCode } = require('../utils/httpStatus');
 
 const createType = async (req, res) => {
     try {
         const response = await TypeService.createType(req.body);
-        return res.status(response.status === 'OK' ? 201 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 201)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -16,7 +17,7 @@ const createType = async (req, res) => {
 const getAllType = async (req, res) => {
     try {
         const response = await TypeService.getAllType();
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -29,7 +30,7 @@ const getAllType = async (req, res) => {
 const updateType = async (req, res) => {
     try {
         const response = await TypeService.updateType(req.params.id, req.body);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -42,7 +43,7 @@ const updateType = async (req, res) => {
 const deleteType = async (req, res) => {
     try {
         const response = await TypeService.deleteType(req.params.id);
-        return res.status(response.status === 'OK' ? 200 : 400).json(response);
+        return res.status(getResponseStatusCode(response, 200)).json(response);
     } catch (error) {
         return res.status(500).json({
             status: 'ERR',
@@ -58,5 +59,7 @@ module.exports = {
     updateType,
     deleteType,
 };
+
+
 
 

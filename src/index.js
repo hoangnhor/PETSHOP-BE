@@ -1,29 +1,82 @@
-const dotenv = require('dotenv');
-const { default: mongoose } = require("mongoose");
+const mongoose = require('mongoose');
 const buildApp = require('./app');
-
-// Load biến môi trường từ file .env
-dotenv.config();
+const { env, assertRequiredEnv } = require('./config/env');
 
 const app = buildApp();
-const port = process.env.PORT || 3030;
-const requiredEnv = ['MONGODB_URL', 'ACCESS_TOKEN', 'REFRESH_TOKEN'];
-const missingEnv = requiredEnv.filter((key) => !process.env[key]);
+let server;
+let isShuttingDown = false;
+let hasStarted = false;
 
-if (missingEnv.length) {
-    console.error(`Lỗi: Thiếu biến môi trường ${missingEnv.join(', ')}`);
-    process.exit(1);
-}
+const gracefulShutdown = async (signal, exitCode = 0) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`Dang dung server (${signal})...`);
 
-mongoose.connect(process.env.MONGODB_URL)
-    .then(() => console.log('Ket noi MONGODB thanh cong!'))
-    .catch(err => {
-        console.error('Lỗi kết nối MongoDB:', err);
+    try {
+        if (server && hasStarted) {
+            await new Promise((resolve, reject) => {
+                server.close((error) => (error ? reject(error) : resolve()));
+            });
+        }
+    } catch (error) {
+        console.error('Lỗi khi đóng HTTP server:', error);
+    }
+
+    try {
+        await mongoose.disconnect();
+    } catch (error) {
+        console.error('Lỗi khi đóng kết nối MongoDB:', error);
+    }
+
+    process.exit(exitCode);
+};
+
+const startServer = async () => {
+    try {
+        assertRequiredEnv();
+
+        await mongoose.connect(env.mongodbUrl, {
+            serverSelectionTimeoutMS: 10000,
+        });
+        console.log('Ket noi MONGODB thanh cong!');
+
+        server = app.listen(env.port, () => {
+            hasStarted = true;
+            console.log('Server is running on port:', env.port);
+        });
+        server.on('error', (error) => {
+            if (error?.code === 'EADDRINUSE') {
+                console.error(`Port ${env.port} đang được sử dụng. Vui lòng dừng tiến trình cũ rồi chạy lại.`);
+                process.exit(1);
+                return;
+            }
+            throw error;
+        });
+    } catch (error) {
+        console.error('Không thể khởi động server:', error.message);
         process.exit(1);
-    });
-app.listen(port, () => {
-    console.log('Server is running on port:', port);
+    }
+};
+
+process.on('SIGINT', () => {
+    gracefulShutdown('SIGINT');
 });
+
+process.on('SIGTERM', () => {
+    gracefulShutdown('SIGTERM');
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled Rejection:', reason);
+    gracefulShutdown('unhandledRejection', 1);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    gracefulShutdown('uncaughtException', 1);
+});
+
+startServer();
 
 
 

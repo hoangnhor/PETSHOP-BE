@@ -1,6 +1,26 @@
 const mongoose = require('mongoose');
 const Pet = require('../models/PetModel');
 
+const PET_MUTABLE_FIELDS = new Set([
+    'name',
+    'species',
+    'breed',
+    'gender',
+    'birthday',
+    'weightKg',
+    'color',
+    'avatar',
+    'notes',
+    'medicalNotes',
+    'isActive',
+]);
+
+const pickPetUpdateFields = (payload = {}) =>
+    Object.entries(payload).reduce((acc, [key, value]) => {
+        if (PET_MUTABLE_FIELDS.has(key)) acc[key] = value;
+        return acc;
+    }, {});
+
 const createPet = async (userId, payload) => {
     const { name, species } = payload;
     if (!name || !species) return { status: 'ERR', message: 'name và species là bắt buộc' };
@@ -17,7 +37,19 @@ const updatePet = async (id, userId, isAdmin, payload) => {
     const pet = await Pet.findById(id);
     if (!pet) return { status: 'ERR', message: 'Thú cưng không tồn tại' };
     if (!isAdmin && String(pet.userId) !== String(userId)) return { status: 'ERR', message: 'Không có quyền cập nhật thú cưng này' };
-    const updated = await Pet.findByIdAndUpdate(id, payload, { new: true });
+
+    const updateData = pickPetUpdateFields(payload);
+    if (!Object.keys(updateData).length) {
+        return { status: 'ERR', message: 'Không có dữ liệu hợp lệ để cập nhật' };
+    }
+
+    if (updateData.name !== undefined) updateData.name = String(updateData.name).trim();
+    if (updateData.weightKg !== undefined) updateData.weightKg = Number(updateData.weightKg);
+
+    const updated = await Pet.findByIdAndUpdate(id, updateData, {
+        new: true,
+        runValidators: true,
+    });
     return { status: 'OK', message: 'Cập nhật thú cưng thành công', data: updated };
 };
 
