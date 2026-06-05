@@ -1,6 +1,7 @@
 const Type = require("../models/TypeModel");
 const Product = require("../models/ProductModel");
 const mongoose = require("mongoose");
+const { buildActiveOnlyFilter, isActiveRecord } = require("../utils/visibility");
 
 const TYPE_DISPLAY_ORDER = [
     "Thức ăn chó",
@@ -55,7 +56,7 @@ const createType = async (newType) => {
 
 const getAllType = async () => {
     try {
-        const allType = await Type.find();
+        const allType = await Type.find(buildActiveOnlyFilter()).lean();
         const sortedType = sortTypesForDisplay(allType);
         return {
             status: "OK",
@@ -126,23 +127,24 @@ const deleteType = async (id) => {
                 message: "Type ID không hợp lệ",
             };
         }
-        const productCount = await Product.countDocuments({ type: id });
+        const productCount = await Product.countDocuments({ type: id, isActive: true });
         if (productCount > 0) {
             return {
                 status: "ERR",
                 message: "Không thể xóa loại đang có sản phẩm",
             };
         }
-        const deletedType = await Type.findByIdAndDelete(id);
-        if (!deletedType) {
+        const deletedType = await Type.findById(id);
+        if (!isActiveRecord(deletedType)) {
             return {
                 status: "ERR",
                 message: "Loại sản phẩm không tồn tại",
             };
         }
+        await Type.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true, runValidators: true });
         return {
             status: "OK",
-            message: "Xóa thành công",
+            message: "Ẩn thành công",
         };
     } catch (e) {
         throw e;

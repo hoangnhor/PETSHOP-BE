@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Service = require('../models/ServiceModel');
+const { buildActiveOnlyFilter, isActiveRecord } = require('../utils/visibility');
 
 const normalizeText = (value = '') => String(value || '').trim();
 const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -76,29 +77,30 @@ const updateService = async (id, payload) => {
 
 const deleteService = async (id) => {
     if (!mongoose.isValidObjectId(id)) return { status: 'ERR', message: 'Service ID không hợp lệ' };
-    const deleted = await Service.findByIdAndDelete(id);
-    if (!deleted) return { status: 'ERR', message: 'Dịch vụ không tồn tại' };
-    return { status: 'OK', message: 'Xóa dịch vụ thành công' };
+    const service = await Service.findById(id);
+    if (!service) return { status: 'ERR', message: 'Dịch vụ không tồn tại' };
+    if (!service.isActive) return { status: 'OK', message: 'Dịch vụ đã được ẩn trước đó' };
+    await Service.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true, runValidators: true });
+    return { status: 'OK', message: 'Ẩn dịch vụ thành công' };
 };
 
 const getServiceDetail = async (id) => {
     if (!mongoose.isValidObjectId(id)) return { status: 'ERR', message: 'Service ID không hợp lệ' };
     const service = await Service.findById(id).lean();
-    if (!service) return { status: 'ERR', message: 'Dịch vụ không tồn tại' };
+    if (!isActiveRecord(service)) return { status: 'ERR', message: 'Dịch vụ không tồn tại' };
     return { status: 'OK', message: 'Thành công', data: service };
 };
 
 const getServiceDetailBySlug = async (slug) => {
     const normalizedSlug = normalizeText(slug).toLowerCase();
     if (!normalizedSlug) return { status: 'ERR', message: 'slug là bắt buộc' };
-    const service = await Service.findOne({ slug: normalizedSlug }).lean();
+    const service = await Service.findOne({ slug: normalizedSlug, isActive: true }).lean();
     if (!service) return { status: 'ERR', message: 'Dịch vụ không tồn tại' };
     return { status: 'OK', message: 'Thành công', data: service };
 };
 
 const getAllServices = async (query = {}) => {
-    const filter = {};
-    if (query.isActive !== undefined) filter.isActive = String(query.isActive) === 'true';
+    const filter = buildActiveOnlyFilter();
     if (query.species) filter.species = query.species;
     if (query.category) filter.category = query.category;
     if (query.keyword) filter.name = { $regex: escapeRegex(query.keyword), $options: 'i' };

@@ -1,12 +1,9 @@
 const mongoose = require('mongoose');
 const Wishlist = require('../models/WishlistModel');
-const Product = require('../models/ProductModel');
+const { loadVisibleProductById, loadVisibleProductsByIds } = require('../utils/productVisibility');
 
 const getWishlistByUser = async (userId) => {
-    const wishlist = await Wishlist.findOne({ userId }).populate({
-        path: 'productIds',
-        match: { isActive: true },
-    });
+    const wishlist = await Wishlist.findOne({ userId }).lean();
 
     if (!wishlist) {
         return {
@@ -16,10 +13,19 @@ const getWishlistByUser = async (userId) => {
         };
     }
 
+    const visibleProducts = await loadVisibleProductsByIds(wishlist.productIds || []);
+    const visibleProductIds = visibleProducts.map((product) => product._id);
+    if (visibleProductIds.length !== (wishlist.productIds || []).length) {
+        await Wishlist.updateOne({ _id: wishlist._id }, { $set: { productIds: visibleProductIds } });
+    }
+
     return {
         status: 'OK',
         message: 'Thành công',
-        data: wishlist,
+        data: {
+            ...wishlist,
+            productIds: visibleProducts,
+        },
     };
 };
 
@@ -27,19 +33,25 @@ const addProductToWishlist = async (userId, productId) => {
     if (!mongoose.isValidObjectId(productId)) {
         return { status: 'ERR', message: 'Product ID không hợp lệ' };
     }
-    const product = await Product.findOne({ _id: productId, isActive: true });
+    const product = await loadVisibleProductById(productId);
     if (!product) return { status: 'ERR', message: 'Sản phẩm không tồn tại hoặc đã ngừng bán' };
 
     const wishlist = await Wishlist.findOneAndUpdate(
         { userId },
         { $addToSet: { productIds: productId } },
         { upsert: true, new: true }
-    ).populate({
-        path: 'productIds',
-        match: { isActive: true },
-    });
+    ).lean();
 
-    return { status: 'OK', message: 'Đã thêm sản phẩm yêu thích', data: wishlist };
+    const visibleProducts = await loadVisibleProductsByIds(wishlist.productIds || []);
+
+    return {
+        status: 'OK',
+        message: 'Đã thêm sản phẩm yêu thích',
+        data: {
+            ...wishlist,
+            productIds: visibleProducts,
+        },
+    };
 };
 
 const removeProductFromWishlist = async (userId, productId) => {
@@ -51,12 +63,18 @@ const removeProductFromWishlist = async (userId, productId) => {
         { userId },
         { $pull: { productIds: productId } },
         { new: true, upsert: true }
-    ).populate({
-        path: 'productIds',
-        match: { isActive: true },
-    });
+    ).lean();
 
-    return { status: 'OK', message: 'Đã xóa sản phẩm khỏi yêu thích', data: wishlist };
+    const visibleProducts = await loadVisibleProductsByIds(wishlist.productIds || []);
+
+    return {
+        status: 'OK',
+        message: 'Đã xóa sản phẩm khỏi yêu thích',
+        data: {
+            ...wishlist,
+            productIds: visibleProducts,
+        },
+    };
 };
 
 const clearWishlist = async (userId) => {

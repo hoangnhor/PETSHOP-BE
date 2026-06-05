@@ -62,7 +62,17 @@ const revokeRefreshTokenForUser = async (userId) => {
     );
 };
 
-const genneralAccessToken = async (payload) => {
+const revokeRefreshTokenFromToken = async (token) => {
+    if (!token) return;
+    try {
+        const decoded = jwt.verify(token, env.refreshTokenSecret);
+        await revokeRefreshTokenForUser(decoded?.id);
+    } catch (error) {
+        // Ignore invalid/expired token on logout.
+    }
+};
+
+const generalAccessToken = async (payload) => {
     const access_token = jwt.sign(
         { ...payload },
         env.accessTokenSecret,
@@ -71,7 +81,7 @@ const genneralAccessToken = async (payload) => {
     return access_token;
 };
 
-const genneralRefreshToken = async (payload) => {
+const generalRefreshToken = async (payload) => {
     const tokenId = crypto.randomUUID();
     const refresh_token = jwt.sign(
         { ...payload, type: 'refresh' },
@@ -130,7 +140,7 @@ const refreshTokenJwtService = async (token) => {
         };
     }
 
-    const access_token = await genneralAccessToken({
+    const access_token = await generalAccessToken({
         id: decoded.id,
         email: user.email,
         isAdmin: user.isAdmin,
@@ -144,7 +154,7 @@ const refreshTokenJwtService = async (token) => {
         };
     }
 
-    const refresh_token = await genneralRefreshToken({
+    const refresh_token = await generalRefreshToken({
         id: decoded.id,
         email: user.email,
         isAdmin: user.isAdmin,
@@ -171,9 +181,12 @@ const refreshTokenJwtService = async (token) => {
 };
 
 module.exports = {
-    genneralAccessToken,
-    genneralRefreshToken,
+    generalAccessToken,
+    generalRefreshToken,
+    genneralAccessToken: generalAccessToken,
+    genneralRefreshToken: generalRefreshToken,
     refreshTokenJwtService,
     saveRefreshTokenForUser,
     revokeRefreshTokenForUser,
+    revokeRefreshTokenFromToken,
 };

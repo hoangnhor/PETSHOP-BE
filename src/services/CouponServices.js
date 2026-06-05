@@ -48,9 +48,11 @@ const updateCoupon = async (id, payload) => {
 
 const deleteCoupon = async (id) => {
     if (!mongoose.isValidObjectId(id)) return { status: 'ERR', message: 'Coupon ID không hợp lệ' };
-    const deleted = await Coupon.findByIdAndDelete(id);
-    if (!deleted) return { status: 'ERR', message: 'Coupon không tồn tại' };
-    return { status: 'OK', message: 'Xóa coupon thành công' };
+    const coupon = await Coupon.findById(id);
+    if (!coupon) return { status: 'ERR', message: 'Coupon không tồn tại' };
+    if (!coupon.isActive) return { status: 'OK', message: 'Coupon đã được ẩn trước đó' };
+    await Coupon.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true, runValidators: true });
+    return { status: 'OK', message: 'Ẩn coupon thành công' };
 };
 
 const getCouponDetail = async (id) => {

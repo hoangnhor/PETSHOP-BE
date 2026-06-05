@@ -2,8 +2,8 @@ const User = require("../models/UserModel");
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 const {
-    genneralAccessToken,
-    genneralRefreshToken,
+    generalAccessToken,
+    generalRefreshToken,
     saveRefreshTokenForUser,
 } = require("./JwtServices");
 const INVALID_LOGIN_MESSAGE = "Email hoặc mật khẩu không chính xác";
@@ -117,12 +117,12 @@ const loginUser = async (userLogin) => {
                 message: INVALID_LOGIN_MESSAGE,
             };
         }
-        const access_token = await genneralAccessToken({
+        const access_token = await generalAccessToken({
             id: checkUser._id,
             email: checkUser.email,
             isAdmin: checkUser.isAdmin,
         });
-        const refresh_token = await genneralRefreshToken({
+        const refresh_token = await generalRefreshToken({
             id: checkUser._id,
             email: checkUser.email,
             isAdmin: checkUser.isAdmin,

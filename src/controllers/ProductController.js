@@ -1,127 +1,44 @@
 const ProductService = require('../services/ProductServices');
 const { getResponseStatusCode } = require('../utils/httpStatus');
+const { wrapController } = require('../utils/controllerWrapper');
 
 const createProduct = async (req, res) => {
-    try {
-        const { name, type, price, countInStock } = req.body;
-        if (!name || !type || price === undefined || countInStock === undefined) {
-            return res.status(400).json({
-                status: 'ERR',
-                message: 'Đầu vào bắt buộc: name, type, price, countInStock',
-            });
-        }
-        const response = await ProductService.createProduct(req.body);
-        return res.status(getResponseStatusCode(response, 201)).json(response);
-    } catch (e) {
-        return res.status(500).json({
-            status: 'ERR',
-            code: 'INTERNAL_ERROR',
-            message: 'Lỗi hệ thống',
-        });
-    }
+    const response = await ProductService.createProduct(req.body);
+    return res.status(getResponseStatusCode(response, 201)).json(response);
 };
 
 const updateProduct = async (req, res) => {
-    try {
-        const productId = req.params.id;
-        const data = req.body;
-        if (!productId) {
-            return res.status(400).json({
-                status: 'ERR',
-                message: 'Product ID bắt buộc',
-            });
-        }
-        const response = await ProductService.updateProduct(productId, data);
-        return res.status(getResponseStatusCode(response, 200)).json(response);
-    } catch (e) {
-        return res.status(500).json({
-            status: 'ERR',
-            code: 'INTERNAL_ERROR',
-            message: 'Lỗi hệ thống',
-        });
-    }
+    const response = await ProductService.updateProduct(req.params.id, req.body);
+    return res.status(getResponseStatusCode(response, 200)).json(response);
 };
 
 const getDetailsProduct = async (req, res) => {
-    try {
-        const productId = req.params.id;
-        if (!productId) {
-            return res.status(400).json({
-                status: 'ERR',
-                message: 'Product ID bắt buộc',
-            });
-        }
-        const response = await ProductService.getDetailsProduct(productId);
-        return res.status(getResponseStatusCode(response, 200)).json(response);
-    } catch (e) {
-        return res.status(500).json({
-            status: 'ERR',
-            code: 'INTERNAL_ERROR',
-            message: 'Lỗi hệ thống',
-        });
-    }
+    const response = await ProductService.getDetailsProduct(req.params.id);
+    return res.status(getResponseStatusCode(response, 200)).json(response);
 };
 
 const deleteProduct = async (req, res) => {
-    try {
-        const productId = req.params.id;
-        if (!productId) {
-            return res.status(400).json({
-                status: 'ERR',
-                message: 'Product ID bắt buộc',
-            });
-        }
-        const response = await ProductService.deleteProduct(productId);
-        return res.status(getResponseStatusCode(response, 200)).json(response);
-    } catch (e) {
-        return res.status(500).json({
-            status: 'ERR',
-            code: 'INTERNAL_ERROR',
-            message: 'Lỗi hệ thống',
-        });
-    }
+    const response = await ProductService.deleteProduct(req.params.id);
+    return res.status(getResponseStatusCode(response, 200)).json(response);
 };
 
 const getAllProduct = async (req, res) => {
-    try {
-        const response = await ProductService.getAllProduct(req.query);
-        return res.status(getResponseStatusCode(response, 200)).json(response);
-    } catch (e) {
-        return res.status(500).json({
-            status: 'ERR',
-            code: 'INTERNAL_ERROR',
-            message: 'Lỗi hệ thống',
-        });
-    }
+    const response = await ProductService.getAllProduct(req.query);
+    return res.status(getResponseStatusCode(response, 200)).json(response);
 };
 
 const searchProduct = async (req, res) => {
-    try {
-        const { keyword } = req.query;
-        if (!keyword) {
-            return res.status(400).json({
-                status: 'ERR',
-                message: 'Keyword là bắt buộc',
-            });
-        }
-        const response = await ProductService.searchProduct(keyword);
-        return res.status(getResponseStatusCode(response, 200)).json(response);
-    } catch (e) {
-        return res.status(500).json({
-            status: 'ERR',
-            code: 'INTERNAL_ERROR',
-            message: 'Lỗi hệ thống',
-        });
-    }
+    const response = await ProductService.searchProduct(req.query.keyword);
+    return res.status(getResponseStatusCode(response, 200)).json(response);
 };
 
 module.exports = {
-    createProduct,
-    updateProduct,
-    getDetailsProduct,
-    deleteProduct,
-    getAllProduct,
-    searchProduct,
+    createProduct: wrapController(createProduct),
+    updateProduct: wrapController(updateProduct),
+    getDetailsProduct: wrapController(getDetailsProduct),
+    deleteProduct: wrapController(deleteProduct),
+    getAllProduct: wrapController(getAllProduct),
+    searchProduct: wrapController(searchProduct),
 };
 
 

@@ -2,6 +2,7 @@ const Product = require("../models/ProductModel");
 const Type = require("../models/TypeModel");
 const Review = require("../models/ReviewModel");
 const mongoose = require("mongoose");
+const { buildActiveOnlyFilter, isActiveRecord } = require("../utils/visibility");
 
 const ALLOWED_FILTER_FIELDS = new Set(['name', 'brand', 'species', 'sku']);
 const ALLOWED_SORT_FIELDS = new Set(['createdAt', 'name', 'price', 'countInStock', 'discount', 'selled']);
@@ -54,11 +55,11 @@ const createProduct = async (newProduct) => {
                 message: 'Loại sản phẩm không hợp lệ',
             };
         }
-        const checkType = await Type.findById(type);
+        const checkType = await Type.findOne({ _id: type, isActive: true });
         if (!checkType) {
             return {
                 status: 'ERR',
-                message: 'Loại sản phẩm không tồn tại',
+                message: 'Loại sản phẩm không tồn tại hoặc đã bị ẩn',
             };
         }
         const createdProduct = await Product.create({
@@ -124,11 +125,11 @@ const updateProduct = async (id, data) => {
                     message: 'Loại sản phẩm không hợp lệ',
                 };
             }
-            const checkType = await Type.findById(updateData.type);
+            const checkType = await Type.findOne({ _id: updateData.type, isActive: true });
             if (!checkType) {
                 return {
                     status: 'ERR',
-                    message: 'Loại sản phẩm không tồn tại',
+                    message: 'Loại sản phẩm không tồn tại hoặc đã bị ẩn',
                 };
             }
         }
@@ -161,10 +162,16 @@ const deleteProduct = async (id) => {
                 message: 'Sản phẩm không tồn tại',
             };
         }
-        await Product.findByIdAndDelete(id);
+        if (!checkProduct.isActive) {
+            return {
+                status: 'OK',
+                message: 'Sản phẩm đã được ẩn trước đó',
+            };
+        }
+        await Product.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true, runValidators: true });
         return {
             status: 'OK',
-            message: 'Xóa thành công',
+            message: 'Ẩn sản phẩm thành công',
         };
     } catch (e) {
         throw e;
@@ -189,7 +196,7 @@ const hydrateTypesForProducts = async (products) => {
 
     if (!typeIds.length) return products;
 
-    const types = await Type.find({ _id: { $in: typeIds } }).lean();
+    const types = await Type.find({ _id: { $in: typeIds }, isActive: true }).lean();
     const typeMap = new Map(types.map((type) => [type._id.toString(), type]));
 
     return products.map((product) => {
@@ -203,6 +210,12 @@ const hydrateTypesForProducts = async (products) => {
         return product;
     });
 };
+
+const keepProductsWithActiveTypes = (products = []) =>
+    products.filter((product) => Boolean(product?.type && typeof product.type === 'object' && product.type._id));
+
+const getActiveTypeIds = async () =>
+    Type.find({ isActive: true }).distinct('_id');
 
 const attachReviewStatsForProducts = async (products = []) => {
     const productIds = [
@@ -257,7 +270,9 @@ const getAllProduct = async (queryParams = {}) => {
         const { limit, page, sort, filter, type, keyword } = queryParams;
         const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 1000);
         const parsedPage = Math.max(parseInt(page, 10) || 0, 0);
-        const conditions = {};
+        const conditions = buildActiveOnlyFilter();
+        const activeTypeIds = await getActiveTypeIds();
+        conditions.type = { $in: activeTypeIds };
 
         if (keyword) {
             conditions.name = { $regex: escapeRegex(keyword), $options: 'i' };
@@ -274,7 +289,7 @@ const getAllProduct = async (queryParams = {}) => {
                     totalPage: 0,
                 };
             }
-            conditions.type = type;
+            conditions.type = { $in: [type].filter((id) => activeTypeIds.some((activeId) => String(activeId) === String(id))) };
         }
 
         const filterPair = normalizePairQuery(filter);
@@ -291,7 +306,7 @@ const getAllProduct = async (queryParams = {}) => {
                         totalPage: 0,
                     };
                 }
-                conditions.type = value;
+                conditions.type = { $in: activeTypeIds.filter((activeId) => String(activeId) === String(value)) };
             } else if (value && ALLOWED_FILTER_FIELDS.has(field)) {
                 conditions[field] = { $regex: escapeRegex(value), $options: 'i' };
             }
@@ -316,7 +331,8 @@ const getAllProduct = async (queryParams = {}) => {
 
         const allProductRaw = await query.limit(parsedLimit).skip(parsedPage * parsedLimit);
         const hydratedTypes = await hydrateTypesForProducts(allProductRaw);
-        const allProduct = await attachReviewStatsForProducts(hydratedTypes);
+        const activeTypeProducts = keepProductsWithActiveTypes(hydratedTypes);
+        const allProduct = await attachReviewStatsForProducts(activeTypeProducts);
 
         return {
             status: 'OK',
@@ -340,14 +356,21 @@ const getDetailsProduct = async (id) => {
             };
         }
         const product = await Product.findOne({ _id: id }).lean();
-        if (!product) {
+        if (!isActiveRecord(product)) {
             return {
                 status: 'ERR',
                 message: 'Sản phẩm không tồn tại',
             };
         }
         const [hydratedTypeProduct] = await hydrateTypesForProducts([product]);
-        const [hydratedProduct] = await attachReviewStatsForProducts([hydratedTypeProduct]);
+        const activeTypeProduct = keepProductsWithActiveTypes([hydratedTypeProduct])[0];
+        if (!activeTypeProduct) {
+            return {
+                status: 'ERR',
+                message: 'Sản phẩm không tồn tại',
+            };
+        }
+        const [hydratedProduct] = await attachReviewStatsForProducts([activeTypeProduct]);
         return {
             status: 'OK',
             message: 'Thành công',
@@ -362,9 +385,12 @@ const searchProduct = async (keyword) => {
     try {
         const productsRaw = await Product.find({
             name: { $regex: escapeRegex(keyword), $options: 'i' },
+            isActive: true,
+            type: { $in: await getActiveTypeIds() },
         }).sort({ createdAt: -1 }).limit(50).lean();
         const hydratedTypes = await hydrateTypesForProducts(productsRaw);
-        const products = await attachReviewStatsForProducts(hydratedTypes);
+        const activeTypeProducts = keepProductsWithActiveTypes(hydratedTypes);
+        const products = await attachReviewStatsForProducts(activeTypeProducts);
 
         return {
             status: 'OK',

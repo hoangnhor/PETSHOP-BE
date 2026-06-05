@@ -117,6 +117,7 @@ const createAppointment = async (userId, payload, isAdmin = false) => {
     }
     const pet = await Pet.findById(petId).lean();
     if (!pet) return { status: 'ERR', message: 'Thú cưng không tồn tại' };
+    if (!pet.isActive) return { status: 'ERR', message: 'Thú cưng đã bị ẩn' };
     if (!isAdmin && String(pet.userId) !== String(userId)) return { status: 'ERR', message: 'Bạn không có quyền đặt lịch cho thú cưng này' };
 
     const uniqueServiceIds = [...new Set(serviceIds.map(String))];
@@ -175,6 +176,7 @@ const updateAppointment = async (id, userId, isAdmin, payload) => {
         }
         const nextPet = await Pet.findById(updateData.petId).lean();
         if (!nextPet) return { status: 'ERR', message: 'Thú cưng không tồn tại' };
+        if (!nextPet.isActive) return { status: 'ERR', message: 'Thú cưng đã bị ẩn' };
         if (!isAdmin && String(nextPet.userId) !== String(userId)) {
             return { status: 'ERR', message: 'Bạn không có quyền chọn thú cưng này' };
         }

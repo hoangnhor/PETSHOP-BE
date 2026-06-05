@@ -7,10 +7,13 @@ const Coupon = require('../models/CouponModel');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const { env } = require('../config/env');
+const { loadVisibleProductById } = require('../utils/productVisibility');
 
 const ORDER_STATUSES = ['pending', 'confirmed', 'shipping', 'delivered', 'cancelled'];
 const PAYMENT_STATUSES = ['unpaid', 'paid', 'refunded'];
 const PAYMENT_METHODS = ['COD', 'BANKING', 'MOMO', 'VNPAY'];
+const generateOrderCode = () =>
+  `ORD${Date.now().toString(36).toUpperCase()}${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 const ORDER_STATUS_TRANSITIONS = {
   pending: ['confirmed', 'cancelled'],
   confirmed: ['shipping', 'cancelled'],
@@ -132,8 +135,8 @@ const createBill = async (newBill, userId) => {
   }
 
   for (const [productId, quantity] of requestedItems.entries()) {
-    const product = await Product.findById(productId);
-    if (!product || !product.isActive) return { status: 'ERR', message: `Sản phẩm ${productId} không tồn tại hoặc đã ngừng bán` };
+    const product = await loadVisibleProductById(productId);
+    if (!product) return { status: 'ERR', message: `Sản phẩm ${productId} không tồn tại hoặc đã ngừng bán` };
     if (product.countInStock < quantity) return { status: 'ERR', message: `Sản phẩm ${product.name} không đủ hàng (còn: ${product.countInStock})` };
 
     const priceAfterDiscount = product.price * (1 - (product.discount || 0) / 100);
@@ -215,6 +218,7 @@ const createBill = async (newBill, userId) => {
 
       const createdBills = await Bill.create([
         {
+          orderCode: generateOrderCode(),
           iduser: userId,
           items: orderItems,
           shippingAddress: normalizedShippingAddress,

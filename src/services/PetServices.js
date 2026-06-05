@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Pet = require('../models/PetModel');
+const { buildActiveOnlyFilter, isActiveRecord } = require('../utils/visibility');
 
 const PET_MUTABLE_FIELDS = new Set([
     'name',
@@ -35,7 +36,7 @@ const createPet = async (userId, payload) => {
 const updatePet = async (id, userId, isAdmin, payload) => {
     if (!mongoose.isValidObjectId(id)) return { status: 'ERR', message: 'Pet ID không hợp lệ' };
     const pet = await Pet.findById(id);
-    if (!pet) return { status: 'ERR', message: 'Thú cưng không tồn tại' };
+    if (!isActiveRecord(pet)) return { status: 'ERR', message: 'Thú cưng không tồn tại' };
     if (!isAdmin && String(pet.userId) !== String(userId)) return { status: 'ERR', message: 'Không có quyền cập nhật thú cưng này' };
 
     const updateData = pickPetUpdateFields(payload);
@@ -56,23 +57,23 @@ const updatePet = async (id, userId, isAdmin, payload) => {
 const deletePet = async (id, userId, isAdmin) => {
     if (!mongoose.isValidObjectId(id)) return { status: 'ERR', message: 'Pet ID không hợp lệ' };
     const pet = await Pet.findById(id);
-    if (!pet) return { status: 'ERR', message: 'Thú cưng không tồn tại' };
+    if (!isActiveRecord(pet)) return { status: 'ERR', message: 'Thú cưng không tồn tại' };
     if (!isAdmin && String(pet.userId) !== String(userId)) return { status: 'ERR', message: 'Không có quyền xóa thú cưng này' };
-    await Pet.findByIdAndDelete(id);
-    return { status: 'OK', message: 'Xóa thú cưng thành công' };
+    if (!pet.isActive) return { status: 'OK', message: 'Thú cưng đã được ẩn trước đó' };
+    await Pet.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true, runValidators: true });
+    return { status: 'OK', message: 'Ẩn thú cưng thành công' };
 };
 
 const getPetDetail = async (id, userId, isAdmin) => {
     if (!mongoose.isValidObjectId(id)) return { status: 'ERR', message: 'Pet ID không hợp lệ' };
     const pet = await Pet.findById(id).lean();
-    if (!pet) return { status: 'ERR', message: 'Thú cưng không tồn tại' };
+    if (!pet || !pet.isActive) return { status: 'ERR', message: 'Thú cưng không tồn tại' };
     if (!isAdmin && String(pet.userId) !== String(userId)) return { status: 'ERR', message: 'Không có quyền xem thú cưng này' };
     return { status: 'OK', message: 'Thành công', data: pet };
 };
 
 const getMyPets = async (userId, query = {}) => {
-    const filter = { userId };
-    if (query.isActive !== undefined) filter.isActive = String(query.isActive) === 'true';
+    const filter = buildActiveOnlyFilter({ userId });
     const data = await Pet.find(filter).sort({ createdAt: -1 }).lean();
     return { status: 'OK', message: 'Thành công', data };
 };

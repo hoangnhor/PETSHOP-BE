@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const InventoryLog = require('../models/InventoryLogModel');
 
+const parseQueryDate = (value) => {
+    if (value === undefined || value === null || String(value).trim() === '') return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const getInventoryLogs = async (query = {}) => {
     const filter = {};
     if (query.productId) {
@@ -10,9 +16,14 @@ const getInventoryLogs = async (query = {}) => {
     if (query.type) filter.type = query.type;
     if (query.billId && mongoose.isValidObjectId(query.billId)) filter.billId = query.billId;
     if (query.from || query.to) {
+        const fromDate = parseQueryDate(query.from);
+        const toDate = parseQueryDate(query.to);
+        if ((query.from && !fromDate) || (query.to && !toDate)) {
+            return { status: 'ERR', message: 'from hoặc to không hợp lệ' };
+        }
         filter.createdAt = {};
-        if (query.from) filter.createdAt.$gte = new Date(query.from);
-        if (query.to) filter.createdAt.$lte = new Date(query.to);
+        if (fromDate) filter.createdAt.$gte = fromDate;
+        if (toDate) filter.createdAt.$lte = toDate;
     }
     const limit = Math.min(Math.max(parseInt(query.limit) || 50, 1), 500);
     const page = Math.max(parseInt(query.page) || 0, 0);

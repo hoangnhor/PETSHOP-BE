@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const Review = require('../models/ReviewModel');
-const Product = require('../models/ProductModel');
 const Bill = require('../models/BillModel');
+const { loadVisibleProductById } = require('../utils/productVisibility');
 
 const canReviewByBill = async (userId, productId, billId) => {
     if (!billId) return false;
@@ -19,8 +19,8 @@ const createReview = async (userId, payload) => {
     const { productId, rating, title = '', content = '', images = [], billId = null } = payload;
     if (!productId || !mongoose.isValidObjectId(productId)) return { status: 'ERR', message: 'productId không hợp lệ' };
     if (!Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5) return { status: 'ERR', message: 'rating phải từ 1 đến 5' };
-    const product = await Product.findById(productId).lean();
-    if (!product || !product.isActive) return { status: 'ERR', message: 'Sản phẩm không tồn tại hoặc đã ngừng bán' };
+    const product = await loadVisibleProductById(productId);
+    if (!product) return { status: 'ERR', message: 'Sản phẩm không tồn tại hoặc đã ngừng bán' };
 
     if (!billId) return { status: 'ERR', message: 'Cần billId để đánh giá sản phẩm đã mua' };
     const isVerifiedPurchase = await canReviewByBill(userId, productId, billId);
@@ -63,8 +63,9 @@ const deleteReview = async (id, userId, isAdmin) => {
     const review = await Review.findById(id);
     if (!review) return { status: 'ERR', message: 'Đánh giá không tồn tại' };
     if (!isAdmin && String(review.userId) !== String(userId)) return { status: 'ERR', message: 'Không có quyền xóa đánh giá này' };
-    await Review.findByIdAndDelete(id);
-    return { status: 'OK', message: 'Xóa đánh giá thành công' };
+    if (!review.isVisible) return { status: 'OK', message: 'Đánh giá đã được ẩn trước đó' };
+    await Review.findByIdAndUpdate(id, { $set: { isVisible: false } }, { new: true, runValidators: true });
+    return { status: 'OK', message: 'Ẩn đánh giá thành công' };
 };
 
 const getReviews = async (query = {}, currentUser = null, isAdmin = false) => {

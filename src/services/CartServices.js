@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const Cart = require('../models/CartModel');
-const Product = require('../models/ProductModel');
+const { loadVisibleProductById, loadVisibleProductsByIds } = require('../utils/productVisibility');
 
 const normalizeItemInput = (item) => ({
     productId: item?.productId || item?.idsp,
@@ -19,10 +19,36 @@ const buildCartItem = (product, quantity) => ({
 
 const getCartByUser = async (userId) => {
     const cart = await Cart.findOne({ userId }).lean();
+    if (!cart) {
+        return {
+            status: 'OK',
+            message: 'Thành công',
+            data: { userId, items: [], couponCode: '', note: '' },
+        };
+    }
+
+    const productIds = (cart.items || []).map((item) => item.productId).filter(Boolean);
+    const visibleProducts = await loadVisibleProductsByIds(productIds);
+    const visibleProductMap = new Map(visibleProducts.map((product) => [String(product._id), product]));
+    const nextItems = (cart.items || [])
+        .map((item) => {
+            const product = visibleProductMap.get(String(item.productId));
+            if (!product) return null;
+            return buildCartItem(product, Number(item.quantity || 0));
+        })
+        .filter(Boolean);
+
+    if (nextItems.length !== (cart.items || []).length) {
+        await Cart.updateOne({ _id: cart._id }, { $set: { items: nextItems } });
+    }
+
     return {
         status: 'OK',
         message: 'Thành công',
-        data: cart || { userId, items: [], couponCode: '', note: '' },
+        data: {
+            ...cart,
+            items: nextItems,
+        },
     };
 };
 
@@ -53,7 +79,7 @@ const upsertCartItems = async (userId, payload) => {
     }
 
     const uniqueProductIds = [...mergedQuantityByProductId.keys()];
-    const products = await Product.find({ _id: { $in: uniqueProductIds }, isActive: true }).lean();
+    const products = await loadVisibleProductsByIds(uniqueProductIds);
     const productMap = new Map(products.map((product) => [String(product._id), product]));
 
     if (productMap.size !== uniqueProductIds.length) {
@@ -95,8 +121,8 @@ const addToCart = async (userId, payload) => {
         return { status: 'ERR', code: 'INVALID_PAYLOAD', message: 'Dữ liệu thêm giỏ hàng không hợp lệ' };
     }
 
-    const product = await Product.findById(productId).lean();
-    if (!product || !product.isActive) {
+    const product = await loadVisibleProductById(productId);
+    if (!product) {
         return { status: 'ERR', code: 'NOT_FOUND', message: 'Sản phẩm không tồn tại hoặc đã ngừng bán' };
     }
 

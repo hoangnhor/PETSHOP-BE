@@ -3,6 +3,7 @@ const router = express.Router();
 const BillController = require('../controllers/BillController');
 const { authMiddleware, verifyToken } = require('../middleware/authMiddleware');
 const { scopedRateLimit } = require('../middleware/securityMiddleware');
+const { validateParam } = require('../middleware/validationMiddleware');
 const { parsePositiveInteger, env } = require('../config/env');
 
 const createBillLimiter = scopedRateLimit({
@@ -37,10 +38,10 @@ const paymentWebhookLimiter = scopedRateLimit({
 
 router.post('/create', createBillLimiter, verifyToken, BillController.createBill);
 router.get('/getall', verifyToken, BillController.getAllBill);
-router.get('/get-details/:id', verifyToken, BillController.getDetailsBill);
-router.patch('/update-status/:id', authMiddleware, BillController.updateBillStatus);
-router.patch('/cancel/:id', verifyToken, BillController.cancelBill);
-router.delete('/delete/:id', authMiddleware, BillController.deleteBill);
+router.get('/get-details/:id', verifyToken, validateParam('id', 'Bill ID'), BillController.getDetailsBill);
+router.patch('/update-status/:id', authMiddleware, validateParam('id', 'Bill ID'), BillController.updateBillStatus);
+router.patch('/cancel/:id', verifyToken, validateParam('id', 'Bill ID'), BillController.cancelBill);
+router.delete('/delete/:id', authMiddleware, validateParam('id', 'Bill ID'), BillController.deleteBill);
 router.post(
     '/payment-callback',
     paymentWebhookLimiter,
